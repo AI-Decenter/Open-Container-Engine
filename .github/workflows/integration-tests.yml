@@ -45,9 +45,11 @@ jobs:
           - 6379:6379
 
     steps:
+    
     - name: Checkout code
       uses: actions/checkout@v4
-
+    - name: Print Environment Variables  
+      run: env
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
