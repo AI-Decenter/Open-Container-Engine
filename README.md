@@ -18,26 +18,52 @@
 
 **Deploy Containers in Seconds. Your App, Live on the Web.**
 
+*An Open-Source Alternative to Google Cloud Run - Built with Rust & Axum*
+
 ---
 
 ## Introduction
 
-**Container Engine** is a revolutionary open-source service that empowers developers to effortlessly deploy containerized applications to the internet with unprecedented simplicity and speed. By intelligently abstracting away the complexity of Kubernetes infrastructure, Container Engine creates a seamless deployment experience that lets you focus entirely on your code and business logic, not on managing infrastructure.
+**Container Engine** is an open-source alternative to Google Cloud Run, built with Rust and the Axum framework. This revolutionary service empowers developers to effortlessly deploy containerized applications to the internet with unprecedented simplicity and speed. By intelligently abstracting away the complexity of Kubernetes infrastructure, Container Engine creates a seamless deployment experience that lets you focus entirely on your code and business logic, not on managing infrastructure.
 
-With Container Engine, the journey from a Docker image to a live, production-ready URL happens with just a single API call—no YAML configurations to write, no kubectl commands to remember, and no infrastructure headaches. Whether you're a solo developer launching a side project or part of an enterprise team deploying critical services, Container Engine provides a standardized, reliable deployment pipeline that just works.
+Unlike proprietary solutions, Container Engine provides a complete **User Management System** including user registration, authentication, API key management, and deployment management - all while being fully open-source. With Container Engine, the journey from a Docker image to a live, production-ready URL happens with just a single API call—no YAML configurations to write, no kubectl commands to remember, and no infrastructure headaches.
 
 ## Key Features
 
+### User Management System
+- **User Registration & Authentication:** Complete user registration and login system with secure password management
+- **API Key Management:** Generate, manage, and revoke API keys for secure access to the platform
+- **User Dashboard:** Comprehensive user interface for managing deployments, viewing usage, and account settings
+
+### Container Deployment & Management
 - **Deploy via API:** Go from container image to live URL with a single API call, reducing deployment time from hours to seconds.
 - **Zero Kubernetes Hassle:** No need to write YAML or manage `kubectl`. Our engine translates simple REST API calls into complex Kubernetes configurations behind the scenes.
 - **Auto-generated URLs:** Every deployment gets a clean, memorable, and instantly accessible URL with automatic HTTPS certificate provisioning and management.
 - **Scalable by Design:** Built on the robust foundation of Kubernetes for reliability and scale, with built-in horizontal scaling capabilities.
+
+### Technical Features
+- **Rust + Axum Backend:** High-performance, memory-safe backend built with Rust and the modern Axum web framework
+- **OpenAPI Documentation:** Complete API documentation with Swagger UI integration using utoipa
 - **Registry Agnostic:** Pull public or private images from Docker Hub, Google Container Registry, Amazon ECR, GitHub Container Registry, or any other container registry with support for authentication.
 - **Environment Variables Management:** Securely inject configuration through environment variables without rebuilding images.
 - **Deployment Monitoring:** Real-time logs and performance metrics for all your deployments in one unified dashboard.
 - **Zero Downtime Updates:** Update your applications seamlessly with rolling updates that guarantee availability.
+- **Automated Setup:** Intelligent setup script that checks and installs all required dependencies automatically.
 
-## How It Works (Architecture Overview)
+## Technology Stack
+
+**Container Engine** is built with modern, high-performance technologies:
+
+- **Backend:** Rust with Axum framework for maximum performance and memory safety
+- **Database:** PostgreSQL for reliable data persistence
+- **Container Orchestration:** Kubernetes for scalable container management
+- **Authentication:** JWT tokens with bcrypt password hashing
+- **Monitoring:** Prometheus metrics with Grafana dashboards
+- **Logging:** Structured logging with correlation IDs
+
+The Rust + Axum backend provides exceptional performance while ensuring memory safety and preventing common security vulnerabilities.
+
+## Architecture Overview
 
 Container Engine provides a sophisticated yet simple interface between developers and Kubernetes infrastructure. Users interact with the Container Engine REST API or SDK, and our service intelligently translates these high-level deployment requests into the appropriate Kubernetes objects (Deployment, Service, Ingress) on the backend cluster.
 
@@ -74,9 +100,13 @@ The architecture is designed to be cloud-agnostic, meaning Container Engine can 
 ## Getting Started
 
 ### Prerequisites
-- An account with Container Engine ([your-domain])
-- An API Key generated from your user dashboard
+- An account with Container Engine (register via API or web interface)
+- An API Key generated from your user dashboard or via the API
 - A Docker image available in a container registry
+
+## API Documentation
+
+For comprehensive API documentation including authentication, user management, and deployment endpoints, see [APIs.md](./APIs.md).
 
 ### Installation Options
 
@@ -290,19 +320,175 @@ We enthusiastically welcome contributions to the Container Engine project! Wheth
 5. Open a Pull Request
 
 ### Development Setup
+
+Container Engine includes an automated setup script that handles dependency installation and environment configuration:
+
 ```bash
 # Clone the repository
-git clone https://github.com/AI-Decenter/Open-Container-Engine.git
-
-# Install dependencies
+git clone https://github.com/ngocbd/Open-Container-Engine.git
 cd Open-Container-Engine
-npm install
 
-# Run tests
-npm test
+# Make setup script executable
+chmod +x setup.sh
+
+# Check system dependencies
+./setup.sh check
+
+# Full automated setup (installs dependencies if missing)
+./setup.sh setup
 
 # Start development server
-npm start
+./setup.sh dev
+```
+
+#### Available Setup Commands
+
+```bash
+# Get help and see all available commands
+./setup.sh help
+
+# Development commands
+./setup.sh build          # Build the project
+./setup.sh test           # Run Rust tests
+./setup.sh format         # Format code
+./setup.sh lint           # Run linting
+
+# Integration testing
+make test-setup           # Setup integration test environment
+make test-integration     # Run comprehensive API integration tests
+make test-integration-verbose  # Run integration tests with verbose output
+make test-clean          # Clean integration test environment
+
+# Database management
+./setup.sh db-up          # Start database services
+./setup.sh db-down        # Stop database services
+./setup.sh db-reset       # Reset database and volumes
+./setup.sh migrate        # Run database migrations
+./setup.sh sqlx-prepare   # Prepare SQLx for offline compilation
+
+# Docker operations
+./setup.sh docker-build   # Build Docker image
+./setup.sh docker-up      # Start all services with Docker
+./setup.sh docker-down    # Stop all Docker services
+
+# Cleanup
+./setup.sh clean          # Clean build artifacts
+```
+
+#### Manual Setup (if needed)
+
+If you prefer manual setup or the automated script doesn't work for your system:
+
+```bash
+# Install Rust and Cargo
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Install SQLx CLI
+cargo install sqlx-cli --no-default-features --features native-tls,postgres
+
+# Start database services
+docker compose up postgres redis -d
+
+# Create environment file
+cp .env.example .env
+
+# Run migrations
+export DATABASE_URL="postgresql://postgres:password@localhost:5432/container_engine"
+sqlx migrate run
+
+# Prepare SQLx for offline compilation
+cargo sqlx prepare
+
+# Build and run
+cargo build
+cargo run
+```
+
+#### API Documentation
+
+Once the server is running, you can access:
+
+- **Health Check**: http://localhost:3000/health
+- **OpenAPI Specification**: http://localhost:3000/api-docs/openapi.json
+- **API Endpoints**: All endpoints are documented in the OpenAPI spec
+
+#### Dependencies
+
+The setup script automatically checks for and installs:
+
+- **Rust** (latest stable version)
+- **Docker** & **Docker Compose**
+- **Git** & **curl**
+- **Python 3** (optional, for development tools)
+- **SQLx CLI** (for database migrations)
+
+## Testing
+
+Container Engine includes a comprehensive test suite to ensure API reliability and functionality.
+
+### Integration Tests
+
+We maintain a complete integration test suite using pytest that validates all API endpoints:
+
+- **93 integration tests** covering every API endpoint
+- **Automated test environment** with Docker management
+- **Authentication testing** for JWT tokens and API keys
+- **Error case validation** for proper error handling
+- **Response format verification** ensuring API consistency
+
+#### Running Integration Tests
+
+```bash
+# Setup test environment (install Python dependencies)
+make test-setup
+
+# Run all integration tests
+make test-integration
+
+# Run tests with verbose output
+make test-integration-verbose
+
+# Run specific test category
+pytest -m auth              # Authentication tests
+pytest -m deployment        # Deployment tests
+pytest -m monitoring        # Monitoring tests
+
+# Clean up test environment
+make test-clean
+```
+
+#### Test Categories
+
+- **Authentication** (13 tests): Registration, login, logout, token refresh
+- **API Keys** (12 tests): Creation, listing, revocation, authentication
+- **User Profile** (15 tests): Profile management, password changes
+- **Deployments** (23 tests): CRUD operations, scaling, lifecycle management
+- **Monitoring** (11 tests): Logs, metrics, status endpoints
+- **Domains** (12 tests): Custom domain management
+- **Health Check** (3 tests): Server health monitoring
+- **Infrastructure** (4 tests): Test framework validation
+
+#### Continuous Integration
+
+Integration tests run automatically on every commit to the main branch via GitHub Actions, ensuring:
+
+- Code quality through linting and formatting checks
+- Database compatibility with PostgreSQL
+- Redis connectivity and caching functionality
+- Complete API endpoint validation
+
+For detailed testing documentation, see [tests/README.md](tests/README.md) and [INTEGRATION_TESTS.md](INTEGRATION_TESTS.md).
+
+### Unit Tests
+
+Rust unit tests are available for core functionality:
+
+```bash
+# Run Rust unit tests
+cargo test
+
+# Run with verbose output
+cargo test -- --nocapture
 ```
 
 ## Roadmap
@@ -331,7 +517,7 @@ of this software and associated documentation files...
 
 - **Website**: [your-domain]
 - **Documentation**: [docs.your-domain]
-- **GitHub**: [github.com/AI-Decenter/Open-Container-Engine](https://github.com/AI-Decenter/Open-Container-Engine)
+- **GitHub**: [github.com/ngocbd/Open-Container-Engine](https://github.com/ngocbd/Open-Container-Engine)
 - **Community**: [Join our Slack](https://slack.your-domain)
 - **Twitter**: [@ContainerEngine](https://twitter.com/ContainerEngine)
 

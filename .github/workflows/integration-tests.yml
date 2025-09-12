@@ -1,0 +1,147 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: container_engine_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Install SQLx CLI
+      run: cargo install sqlx-cli --no-default-features --features postgres
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r tests/requirements.txt
+
+    - name: Build Rust application
+      run: |
+        # Use offline mode for SQLx to avoid database dependency during compilation
+        export SQLX_OFFLINE=true
+        cargo build --verbose
+
+    - name: Set up test environment
+      run: |
+        # Set the environment variable to use the integration test configuration
+        echo "ENVIRONMENT=integrate_test" >> $GITHUB_ENV
+        
+        # Load configuration from .env.integrate_test file
+        if [ -f .env.integrate_test ]; then
+          while IFS= read -r line; do
+            # Skip comments and empty lines
+            if [[ $line =~ ^[^#]*= ]]; then
+              echo "$line" >> $GITHUB_ENV
+            fi
+          done < .env.integrate_test
+        fi
+        
+        # Override specific variables for GitHub Actions environment
+        echo "DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine_test" >> $GITHUB_ENV
+        echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+
+    - name: Run database migrations
+      run: |
+        sqlx migrate run --database-url postgresql://postgres:password@localhost:5432/container_engine_test
+
+    - name: Start Container Engine server in background
+      run: |
+        # Use offline mode for SQLx and start server
+        export SQLX_OFFLINE=true
+        cargo run &
+        echo $! > server.pid
+        
+        # Wait for server to be ready (using port 3001 for integration tests)
+        timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+
+    - name: Run integration tests
+      run: |
+        python -m pytest tests/integrate/ -v --tb=short --durations=10
+      timeout-minutes: 15
+
+    - name: Stop server
+      if: always()
+      run: |
+        if [ -f server.pid ]; then
+          kill $(cat server.pid) || true
+          rm server.pid
+        fi
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results
+        path: |
+          pytest-report.html
+          .pytest_cache/
+        retention-days: 7
+
+    - name: Test Summary
+      if: always()
+      run: |
+        echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "Integration tests completed for Container Engine API" >> $GITHUB_STEP_SUMMARY
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Some tests failed. Check the logs above." >> $GITHUB_STEP_SUMMARY
+        fi

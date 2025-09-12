@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE deployments \n        SET image = COALESCE($1, image),\n            env_vars = COALESCE($2, env_vars),\n            replicas = COALESCE($3, replicas),\n            resources = COALESCE($4, resources),\n            status = 'updating',\n            updated_at = NOW()\n        WHERE id = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Jsonb",
+        "Int4",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d8bffa1741f8fa753418203cbdb5cbda466be93b8a450b84726240249cfe8590"
+}
