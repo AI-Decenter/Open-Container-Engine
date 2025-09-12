@@ -51,7 +51,11 @@ if ! command -v cargo &> /dev/null; then
 fi
 
 print_status "Installing Python test dependencies..."
-pip3 install -r tests/requirements.txt
+# Get script directory for reliable file paths
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+print_status "Installing Python test dependencies..."
+pip3 install --user -r "$SCRIPT_DIR/requirements.txt"
 
 # Set test environment
 export DATABASE_URL="postgresql://postgres:password@localhost:5432/container_engine_test"
@@ -147,10 +151,10 @@ print_status "Starting integration tests..."
 
 if [ -n "$RUN_SPECIFIC_TEST" ]; then
     print_status "Running specific test: $RUN_SPECIFIC_TEST"
-    python3 -m pytest tests/integrate/ -k "$RUN_SPECIFIC_TEST" $PYTEST_ARGS
+    python3 -m pytest "$SCRIPT_DIR/integrate" -k "$RUN_SPECIFIC_TEST" $PYTEST_ARGS
 else
     print_status "Running all integration tests..."
-    python3 -m pytest tests/integrate/ $PYTEST_ARGS
+    python3 -m pytest "$SCRIPT_DIR/integrate" $PYTEST_ARGS
 fi
 
 print_status "Integration tests completed"
