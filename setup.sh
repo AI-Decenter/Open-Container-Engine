@@ -16,6 +16,13 @@ NC='\033[0m' # No Color
 DATABASE_URL="postgresql://postgres:password@localhost:5432/container_engine"
 REDIS_URL="redis://localhost:6379"
 
+# Save real user information for sudo operations
+if [ ! -z "$SUDO_USER" ]; then
+    REAL_USER=$SUDO_USER
+else
+    REAL_USER=$USER
+fi
+
 # Helper functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -42,28 +49,36 @@ USAGE:
     ./setup.sh [COMMAND]
 
 COMMANDS:
-    help            Show this help message
-    setup           Initial project setup (install dependencies)
-    check           Check system dependencies
-    db-up           Start database services
-    db-down         Stop database services
-    db-reset        Reset database and volumes
-    migrate         Run database migrations
-    sqlx-prepare    Prepare SQLx queries for offline compilation
-    dev             Start development server
-    build           Build the project
-    test            Run tests
-    format          Format code
-    lint            Run linting
-    clean           Clean build artifacts
-    docker-build    Build Docker image
-    docker-up       Start all services with Docker
-    docker-down     Stop all Docker services
+    help               Show this help message
+    setup              Initial project setup (install dependencies)
+    setup-k8s          Setup with Kubernetes (includes Minikube)
+    check              Check system dependencies
+    check-k8s          Check Kubernetes dependencies
+    install-minikube   Install and setup Minikube
+    start-minikube     Start Minikube cluster
+    stop-minikube      Stop Minikube cluster
+    k8s-status         Check Kubernetes cluster status
+    db-up              Start database services
+    db-down            Stop database services
+    db-reset           Reset database and volumes
+    migrate            Run database migrations
+    sqlx-prepare       Prepare SQLx queries for offline compilation
+    dev                Start development server
+    build              Build the project
+    test               Run tests
+    format             Format code
+    lint               Run linting
+    clean              Clean build artifacts
+    docker-build       Build Docker image
+    docker-up          Start all services with Docker
+    docker-down        Stop all Docker services
 
 EXAMPLES:
-    ./setup.sh setup       # Full initial setup
-    ./setup.sh dev         # Start development server
-    ./setup.sh db-reset    # Reset database
+    ./setup.sh setup           # Full initial setup
+    ./setup.sh setup-k8s       # Setup with Kubernetes support
+    ./setup.sh install-minikube # Install Minikube only
+    ./setup.sh dev             # Start development server
+    ./setup.sh db-reset        # Reset database
 EOF
 }
 
@@ -75,6 +90,19 @@ command_exists() {
 # Check if Docker service is running
 is_docker_running() {
     docker info >/dev/null 2>&1
+}
+
+# Function to detect OS
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS=$NAME
+        VERSION=$VERSION_ID
+    else
+        log_error "Cannot determine OS"
+        return 1
+    fi
+    log_info "Detected OS: $OS $VERSION"
 }
 
 # Check system dependencies
@@ -155,19 +183,76 @@ check_dependencies() {
     fi
 }
 
+# Check Kubernetes dependencies
+check_k8s_dependencies() {
+    log_info "Checking Kubernetes dependencies..."
+    
+    local missing_deps=()
+    
+    # Check minikube
+    if command_exists minikube; then
+        local minikube_version=$(minikube version --short 2>/dev/null | cut -d' ' -f3)
+        log_success "Minikube found: $minikube_version"
+    else
+        log_warning "Minikube not found"
+        missing_deps+=("minikube")
+    fi
+    
+    # Check kubectl
+    if command_exists kubectl; then
+        local kubectl_version=$(kubectl version --client --short 2>/dev/null | cut -d' ' -f3)
+        log_success "kubectl found: $kubectl_version"
+    else
+        log_warning "kubectl not found"
+        missing_deps+=("kubectl")
+    fi
+    
+    # Check Docker (required for minikube)
+    if command_exists docker; then
+        if systemctl is-active --quiet docker 2>/dev/null || is_docker_running; then
+            log_success "Docker is running (required for Minikube)"
+        else
+            log_warning "Docker is installed but not running"
+            missing_deps+=("docker-running")
+        fi
+    else
+        log_error "Docker not found (required for Minikube)"
+        missing_deps+=("docker")
+    fi
+    
+    if [ ${#missing_deps[@]} -eq 0 ]; then
+        log_success "All Kubernetes dependencies are installed!"
+        return 0
+    else
+        log_error "Missing Kubernetes dependencies: ${missing_deps[*]}"
+        return 1
+    fi
+}
+
 # Install dependencies
 install_dependencies() {
     log_info "Installing missing dependencies..."
     
     # Detect OS
+    detect_os
+    
+    # Check if we need sudo
+    local need_sudo=false
+    if [ "$EUID" -ne 0 ]; then
+        need_sudo=true
+    fi
+    
+    # Linux installation
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Linux
-        if command_exists apt-get; then
+        if [[ $OS == *"Ubuntu"* ]] || [[ $OS == *"Debian"* ]]; then
             # Ubuntu/Debian
-            log_info "Detected Ubuntu/Debian system"
+            log_info "Installing for Ubuntu/Debian system"
             
-            # Update package list
-            sudo apt-get update
+            if [ "$need_sudo" = true ]; then
+                sudo apt-get update
+            else
+                apt-get update
+            fi
             
             # Install Rust if missing
             if ! command_exists rustc; then
@@ -179,25 +264,48 @@ install_dependencies() {
             # Install Docker if missing
             if ! command_exists docker; then
                 log_info "Installing Docker..."
-                sudo apt-get install -y docker.io
-                sudo systemctl start docker
-                sudo systemctl enable docker
-                sudo usermod -aG docker $USER
+                if [ "$need_sudo" = true ]; then
+                    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    sudo apt-get update
+                    sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+                    sudo systemctl start docker
+                    sudo systemctl enable docker
+                    sudo usermod -aG docker $USER
+                else
+                    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    apt-get update
+                    apt-get install -y docker-ce docker-ce-cli containerd.io
+                    systemctl start docker
+                    systemctl enable docker
+                    usermod -aG docker $REAL_USER
+                fi
                 log_warning "You may need to log out and back in for Docker permissions to take effect"
             fi
             
             # Install Docker Compose if missing
             if ! command_exists docker-compose && ! docker compose version >/dev/null 2>&1; then
                 log_info "Installing Docker Compose..."
-                sudo apt-get install -y docker-compose-plugin
+                if [ "$need_sudo" = true ]; then
+                    sudo apt-get install -y docker-compose-plugin
+                else
+                    apt-get install -y docker-compose-plugin
+                fi
             fi
             
             # Install other tools
-            sudo apt-get install -y git curl python3 python3-pip
+            if [ "$need_sudo" = true ]; then
+                sudo apt-get install -y git curl python3 python3-pip
+            else
+                apt-get install -y git curl python3 python3-pip
+            fi
             
-        elif command_exists yum; then
+        elif [[ $OS == *"CentOS"* ]] || [[ $OS == *"Red Hat"* ]] || [[ $OS == *"Fedora"* ]]; then
             # RHEL/CentOS/Fedora
-            log_info "Detected RHEL/CentOS/Fedora system"
+            log_info "Installing for RHEL/CentOS/Fedora system"
             
             # Install Rust if missing
             if ! command_exists rustc; then
@@ -209,19 +317,34 @@ install_dependencies() {
             # Install Docker if missing
             if ! command_exists docker; then
                 log_info "Installing Docker..."
-                sudo yum install -y docker
-                sudo systemctl start docker
-                sudo systemctl enable docker
-                sudo usermod -aG docker $USER
+                if [ "$need_sudo" = true ]; then
+                    sudo yum install -y yum-utils
+                    sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                    sudo yum install -y docker-ce docker-ce-cli containerd.io
+                    sudo systemctl start docker
+                    sudo systemctl enable docker
+                    sudo usermod -aG docker $USER
+                else
+                    yum install -y yum-utils
+                    yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                    yum install -y docker-ce docker-ce-cli containerd.io
+                    systemctl start docker
+                    systemctl enable docker
+                    usermod -aG docker $REAL_USER
+                fi
             fi
             
             # Install other tools
-            sudo yum install -y git curl python3 python3-pip
+            if [ "$need_sudo" = true ]; then
+                sudo yum install -y git curl python3 python3-pip
+            else
+                yum install -y git curl python3 python3-pip
+            fi
         fi
         
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        log_info "Detected macOS system"
+        log_info "Installing for macOS system"
         
         if ! command_exists brew; then
             log_info "Installing Homebrew..."
@@ -255,6 +378,179 @@ install_dependencies() {
     fi
     
     log_success "Dependencies installation completed!"
+}
+
+# Install kubectl
+install_kubectl() {
+    log_info "Installing kubectl..."
+    
+    local need_sudo=false
+    if [ "$EUID" -ne 0 ]; then
+        need_sudo=true
+    fi
+    
+    # Download kubectl
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    
+    # Validate binary
+    curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+    echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+    
+    # Install kubectl
+    if [ "$need_sudo" = true ]; then
+        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    else
+        install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    fi
+    
+    # Clean up
+    rm -f kubectl kubectl.sha256
+    
+    log_success "kubectl installed successfully!"
+}
+
+# Install minikube
+install_minikube_binary() {
+    log_info "Installing Minikube..."
+    
+    local need_sudo=false
+    if [ "$EUID" -ne 0 ]; then
+        need_sudo=true
+    fi
+    
+    # Download minikube
+    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    
+    # Install minikube
+    if [ "$need_sudo" = true ]; then
+        sudo install minikube-linux-amd64 /usr/local/bin/minikube
+    else
+        install minikube-linux-amd64 /usr/local/bin/minikube
+    fi
+    
+    # Clean up
+    rm -f minikube-linux-amd64
+    
+    log_success "Minikube installed successfully!"
+}
+
+# Full Minikube installation and setup
+install_minikube() {
+    log_info "=== Starting Minikube Installation ==="
+    
+    # Check if running as root, if not, re-run with sudo for system installations
+    if [ "$EUID" -ne 0 ] && [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        log_info "Re-running with sudo for system package installations..."
+        sudo -E bash "$0" install-minikube
+        return $?
+    fi
+    
+    # Detect OS
+    detect_os
+    
+    # Check if minikube is already installed
+    if command_exists minikube; then
+        local minikube_version=$(minikube version --short 2>/dev/null | cut -d' ' -f3)
+        log_success "Minikube is already installed - Version: $minikube_version"
+    else
+        # Check and install Docker if needed
+        if ! command_exists docker || ! (systemctl is-active --quiet docker 2>/dev/null || is_docker_running); then
+            log_info "Installing Docker (required for Minikube)..."
+            install_dependencies
+        fi
+        
+        # Install kubectl if needed
+        if ! command_exists kubectl; then
+            install_kubectl
+        fi
+        
+        # Install minikube
+        install_minikube_binary
+    fi
+    
+    # Start minikube
+    start_minikube
+    
+    log_success "=== Minikube installation and setup complete! ==="
+}
+
+# Start minikube
+start_minikube() {
+    log_info "Starting Minikube..."
+    
+    # Run minikube with real user if we're running as root
+    if [ "$EUID" -eq 0 ] && [ ! -z "$SUDO_USER" ]; then
+        log_info "Running minikube with user $REAL_USER..."
+        if su - $REAL_USER -c "minikube status >/dev/null 2>&1"; then
+            log_success "Minikube is already running"
+        else
+            su - $REAL_USER -c "minikube start --driver=docker"
+            log_success "Minikube started successfully!"
+        fi
+    else
+        # Check if minikube is already running
+        if minikube status >/dev/null 2>&1; then
+            log_success "Minikube is already running"
+        else
+            # Start with retry logic for docker group membership
+            local max_retries=3
+            local retry_count=0
+            
+            while [ $retry_count -lt $max_retries ]; do
+                if minikube start --driver=docker 2>/dev/null; then
+                    log_success "Minikube started successfully!"
+                    break
+                else
+                    retry_count=$((retry_count + 1))
+                    if [ $retry_count -lt $max_retries ]; then
+                        log_warning "Start failed, trying again... ($retry_count/$max_retries)"
+                        sleep 5
+                    else
+                        log_error "Could not start Minikube after $max_retries attempts"
+                        log_error "You may need to logout/login for docker group permissions to take effect"
+                        return 1
+                    fi
+                fi
+            done
+        fi
+    fi
+    
+    # Show status
+    k8s_status
+}
+
+# Stop minikube
+stop_minikube() {
+    log_info "Stopping Minikube..."
+    
+    if [ "$EUID" -eq 0 ] && [ ! -z "$SUDO_USER" ]; then
+        su - $REAL_USER -c "minikube stop"
+    else
+        minikube stop
+    fi
+    
+    log_success "Minikube stopped successfully!"
+}
+
+# Check Kubernetes status
+k8s_status() {
+    log_info "Checking Kubernetes cluster status..."
+    
+    if [ "$EUID" -eq 0 ] && [ ! -z "$SUDO_USER" ]; then
+        log_info "Minikube status:"
+        su - $REAL_USER -c "minikube status"
+        log_info "Cluster information:"
+        su - $REAL_USER -c "kubectl cluster-info"
+        log_info "Nodes:"
+        su - $REAL_USER -c "kubectl get nodes"
+    else
+        log_info "Minikube status:"
+        minikube status
+        log_info "Cluster information:"
+        kubectl cluster-info
+        log_info "Nodes:"
+        kubectl get nodes
+    fi
 }
 
 # Setup environment file
@@ -494,6 +790,23 @@ full_setup() {
     log_info "You can now run: ./setup.sh dev"
 }
 
+# Full setup with Kubernetes
+full_setup_k8s() {
+    log_info "Starting full Container Engine setup with Kubernetes..."
+    
+    # Run full setup first
+    full_setup
+    
+    # Install Minikube
+    install_minikube
+    
+    log_success "Full setup with Kubernetes completed!"
+    log_info "Available commands:"
+    log_info "  - ./setup.sh dev          : Start development server"
+    log_info "  - ./setup.sh k8s-status   : Check Kubernetes status"
+    log_info "  - minikube dashboard      : Open Kubernetes dashboard"
+}
+
 # Main script logic
 case "${1:-help}" in
     help)
@@ -502,8 +815,26 @@ case "${1:-help}" in
     setup)
         full_setup
         ;;
+    setup-k8s)
+        full_setup_k8s
+        ;;
     check)
         check_dependencies
+        ;;
+    check-k8s)
+        check_k8s_dependencies
+        ;;
+    install-minikube)
+        install_minikube
+        ;;
+    start-minikube)
+        start_minikube
+        ;;
+    stop-minikube)
+        stop_minikube
+        ;;
+    k8s-status)
+        k8s_status
         ;;
     db-up)
         start_database
