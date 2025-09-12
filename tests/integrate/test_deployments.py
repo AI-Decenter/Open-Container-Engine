@@ -11,7 +11,9 @@ class TestCreateDeployment:
     
     def test_create_deployment_success(self, api_key_client):
         """Test successful deployment creation"""
+
         client, api_key_info, user_info = api_key_client
+
         
         deployment_data = {
             "appName": f"test-app-{int(time.time())}",

@@ -62,6 +62,8 @@ class TestCreateApiKey:
         response = client.post("/v1/api-keys", json=api_key_data)
         
         assert response.status_code == 422
+        # Changed to use response.text for non-JSON responses
+        assert "missing field `name`" in response.text
         data = response.json()
         assert "error" in data
     
@@ -110,8 +112,8 @@ class TestListApiKeys:
         assert "page" in pagination
         assert "limit" in pagination
         assert "total" in pagination
-        assert "totalPages" in pagination
-        
+        assert "total_pages" in pagination
+
         # Verify at least our created key is in the list
         api_keys = data["api_keys"]
         assert len(api_keys) > 0
@@ -188,10 +190,12 @@ class TestRevokeApiKey:
         """Test revoking a non-existent API key"""
         client, user_info = authenticated_client
         
-        fake_key_id = "key-nonexistent"
+        fake_key_id = "invalid-uuid"  # Changed to trigger UUID validation error
         response = client.delete(f"/v1/api-keys/{fake_key_id}")
         
-        assert response.status_code == 400  # Invalid UUID format
+        assert response.status_code == 400
+        # Changed to use response.text for non-JSON responses
+        assert "UUID parsing failed" in response.text
         data = response.json()
         assert "error" in data
     
@@ -208,8 +212,10 @@ class TestRevokeApiKey:
 class TestApiKeyAuthentication:
     """Test using API keys for authentication"""
     
+    
     def test_api_key_authentication(self, api_key_client):
         """Test making requests with API key authentication"""
+        # Get the client, API key info and user info from the fixture
         client, api_key_info, user_info = api_key_client
         
         # Test accessing user profile with API key
@@ -219,8 +225,8 @@ class TestApiKeyAuthentication:
         data = response.json()
         
         # Should get the user profile for the user who created the API key
-        assert data["email"] == user_info["user_data"]["email"]
-        assert data["username"] == user_info["user_data"]["username"]
+        assert data["email"] == user_info["login_data"]["email"]
+        assert data["username"] == user_info["login_data"]["username"]
     
     def test_invalid_api_key_authentication(self, clean_client):
         """Test authentication with invalid API key"""

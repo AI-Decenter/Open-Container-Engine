@@ -10,6 +10,55 @@ from typing import Dict, Optional
 import psycopg2
 import redis
 from dotenv import load_dotenv
+import pytest
+
+@pytest.fixture
+def clean_client():
+    """Create a new API client without authentication"""
+    return APIClient()
+
+@pytest.fixture
+def authenticated_client():
+    """Create an authenticated client with a test user"""
+    client = APIClient()
+    user_info = create_test_user(client)
+    return client, user_info
+
+@pytest.fixture
+def api_key_client(authenticated_client):
+    """Create a client with API key authentication"""
+    client, user_info = authenticated_client
+    
+    # Create API key
+    api_key_data = {
+        "name": f"test_key_{int(time.time())}",
+        "description": "Test API key for integration tests"
+    }
+    response = client.post("/v1/api-keys", json=api_key_data)
+    if response.status_code != 200:
+        raise Exception(f"Failed to create API key: {response.text}")
+    api_key_info = response.json()
+    
+    # Create new client with API key
+    new_client = APIClient()
+    new_client.set_api_key(api_key_info["api_key"])
+    
+    # Return client, API key info and user info
+    return new_client, api_key_info, user_info
+
+@pytest.fixture(scope="session")
+def test_server():
+    """Start and stop the test server"""
+    server = TestServerManager()
+    server.start_dependencies()
+    server.start_server()
+    yield server
+    server.stop_server()
+
+@pytest.fixture(autouse=True)
+def run_around_tests(test_server):
+    """Ensure server is running for all tests"""
+    yield
 
 # Load environment-specific .env file for tests
 environment = os.getenv("ENVIRONMENT", "integrate_test")
@@ -27,14 +76,14 @@ class TestConfig:
     """Test configuration settings"""
     
     # Server settings
-    BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:3001")  # Use port 3001 for tests
+    BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:3000")  # Use port 3001 for tests
     HEALTH_ENDPOINT = "/health"
     
     # Database settings
     DB_HOST = os.getenv("TEST_DB_HOST", "localhost")
     DB_PORT = int(os.getenv("TEST_DB_PORT", "5432"))
     DB_USER = os.getenv("TEST_DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", "password")
+    DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", "1")
     DB_NAME = os.getenv("TEST_DB_NAME", "container_engine_test")
     DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     
@@ -333,3 +382,4 @@ def create_test_api_key(client: APIClient) -> Dict:
         raise Exception(f"Failed to create test API key: {response.text}")
     
     return response.json()
+    
