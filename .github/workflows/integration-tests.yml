@@ -21,7 +21,6 @@ jobs:
           POSTGRES_DB: container_engine_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
-          # Thêm các env variables quan trọng cho GitHub Actions
           POSTGRES_HOST_AUTH_METHOD: trust
           PGDATA: /var/lib/postgresql/data/pgdata
         options: >-
@@ -69,7 +68,7 @@ jobs:
     - name: Install Redis CLI
       run: |
         sudo apt-get update
-        sudo apt-get install -y redis-tools
+        sudo apt-get install -y redis-tools postgresql-client
 
     # Verify services are running trước khi tiếp tục
     - name: Verify PostgreSQL is running
@@ -145,54 +144,205 @@ jobs:
         echo "Running database migrations..."
         sqlx migrate run --database-url postgresql://postgres:password@localhost:5432/container_engine_test
 
-    - name: Start Container Engine server in background
+    - name: Check port availability and environment
       run: |
-        # Use offline mode for SQLx and start server
-        export SQLX_OFFLINE=true
-        cargo run &
-        echo $! > server.pid
+        echo "Checking port 3001 availability..."
+        if netstat -tulpn | grep -q ":3001"; then
+          echo "⚠️ Port 3001 is already in use"
+          netstat -tulpn | grep ":3001"
+          # Kill any process using port 3001
+          sudo fuser -k 3001/tcp || true
+          sleep 2
+        fi
         
-        # Wait for server to be ready (using port 3001 for integration tests)
-        echo "Waiting for server to start..."
-        timeout 60 bash -c '
-          while ! curl -f http://localhost:3001/health 2>/dev/null; do
-            echo "Waiting for server..."
-            sleep 2
-          done
-        '
-        echo "✅ Server is ready"
+        echo "Environment variables:"
+        env | grep -E "(DATABASE_URL|REDIS_URL|ENVIRONMENT|RUST_LOG|SQLX_OFFLINE)" || true
+        
+        echo "Current directory contents:"
+        ls -la
+        
+        echo "Rust binary location:"
+        find target -name "container-engine" -o -name "open-container-engine" 2>/dev/null || echo "Binary not found with expected names"
+
+    - name: Start Container Engine server in background (enhanced)
+      run: |
+        # Set all required environment variables
+        export SQLX_OFFLINE=true
+        export RUST_LOG=info
+        export DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine_test
+        export REDIS_URL=redis://localhost:6379
+        export ENVIRONMENT=integrate_test
+        
+        echo "Starting server with environment:"
+        echo "DATABASE_URL: $DATABASE_URL"
+        echo "REDIS_URL: $REDIS_URL"
+        echo "ENVIRONMENT: $ENVIRONMENT"
+        echo "RUST_LOG: $RUST_LOG"
+        
+        # Test database connection first
+        echo "Testing database connection..."
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d container_engine_test -c "SELECT 1;" || {
+          echo "❌ Database connection failed"
+          exit 1
+        }
+        
+        # Test Redis connection
+        echo "Testing Redis connection..."
+        redis-cli -h localhost -p 6379 ping || {
+          echo "❌ Redis connection failed"
+          exit 1
+        }
+        
+        # Find the correct binary name
+        BINARY_PATH=""
+        if [ -f "target/debug/container-engine" ]; then
+          BINARY_PATH="target/debug/container-engine"
+        elif [ -f "target/debug/open-container-engine" ]; then
+          BINARY_PATH="target/debug/open-container-engine"
+        else
+          echo "❌ Cannot find the binary. Available binaries:"
+          find target -type f -executable 2>/dev/null | head -10
+          exit 1
+        fi
+        
+        echo "Using binary: $BINARY_PATH"
+        
+        # Start server and capture output
+        echo "Starting Container Engine server..."
+        nohup $BINARY_PATH > server.log 2>&1 &
+        SERVER_PID=$!
+        echo $SERVER_PID > server.pid
+        
+        echo "Server PID: $SERVER_PID"
+        
+        # Wait for server to start with better error handling
+        echo "Waiting for server to be ready..."
+        for i in {1..60}; do
+          if curl -sf http://localhost:3001/health >/dev/null 2>&1; then
+            echo "✅ Server is ready (attempt $i)"
+            break
+          elif [ $i -eq 60 ]; then
+            echo "❌ Server failed to start within 60 seconds"
+            echo "Server log:"
+            cat server.log 2>/dev/null || echo "No server log available"
+            echo "Process status:"
+            ps aux | grep -E "(container|cargo)" || echo "No related processes found"
+            echo "Port status:"
+            netstat -tulpn | grep -E "(3000|3001)" || echo "No server listening on expected ports"
+            exit 1
+          else
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "Still waiting... (attempt $i/60)"
+              # Show partial log every 10 attempts
+              if [ -f server.log ]; then
+                echo "Last few lines from server log:"
+                tail -5 server.log
+              fi
+            fi
+            sleep 1
+          fi
+        done
+
+    - name: Show server status and logs
+      run: |
+        echo "=== Server Status ==="
+        if [ -f server.pid ]; then
+          SERVER_PID=$(cat server.pid)
+          echo "Server PID: $SERVER_PID"
+          if ps -p $SERVER_PID > /dev/null 2>&1; then
+            echo "✅ Server process is running"
+          else
+            echo "❌ Server process is not running"
+          fi
+        fi
+        
+        echo "=== Port Status ==="
+        netstat -tulpn | grep -E "(3000|3001)" || echo "No server ports found"
+        
+        echo "=== Server Log (last 20 lines) ==="
+        if [ -f server.log ]; then
+          tail -20 server.log
+        else
+          echo "No server log file found"
+        fi
+
+    - name: Test server health endpoint directly
+      run: |
+        echo "Testing health endpoint..."
+        curl -v http://localhost:3001/health || {
+          echo "Health endpoint test failed"
+          echo "Trying alternative ports..."
+          curl -v http://localhost:3000/health || echo "Port 3000 also failed"
+        }
 
     - name: Run integration tests
       run: |
-        python -m pytest tests/integrate/ -v --tb=short --durations=10
+        echo "Starting integration tests..."
+        python -m pytest tests/integrate/ -v --tb=short --durations=10 -x
       timeout-minutes: 15
+
+    - name: Debug on failure
+      if: failure()
+      run: |
+        echo "=== DEBUG INFORMATION ==="
+        echo "Environment variables:"
+        env | grep -E "(DATABASE_URL|REDIS_URL|ENVIRONMENT)" || true
+        
+        echo "=== Server Process Status ==="
+        if [ -f server.pid ]; then
+          SERVER_PID=$(cat server.pid)
+          ps aux | grep $SERVER_PID || echo "Server process not found"
+        fi
+        
+        echo "=== Full Server Log ==="
+        cat server.log 2>/dev/null || echo "No server log available"
+        
+        echo "=== PostgreSQL Connection Test ==="
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d container_engine_test -c "SELECT 1;" || echo "Database connection failed"
+        
+        echo "=== Redis Connection Test ==="
+        redis-cli -h localhost -p 6379 ping || echo "Redis connection failed"
+        
+        echo "=== Port Status ==="
+        netstat -tulpn | grep -E "(3000|3001|5432|6379)" || echo "No expected ports found"
+        
+        echo "=== System Resources ==="
+        free -h
+        df -h
+        
+        echo "=== Docker Container Status ==="
+        docker ps -a
+        
+        echo "=== Service Logs ==="
+        docker logs postgres-container --tail=10 || echo "No PostgreSQL logs"
+        docker logs redis-container --tail=10 || echo "No Redis logs"
 
     - name: Stop server
       if: always()
       run: |
         if [ -f server.pid ]; then
-          kill $(cat server.pid) || true
+          SERVER_PID=$(cat server.pid)
+          echo "Stopping server (PID: $SERVER_PID)..."
+          kill $SERVER_PID 2>/dev/null || true
+          # Wait a bit for graceful shutdown
+          sleep 3
+          # Force kill if still running
+          kill -9 $SERVER_PID 2>/dev/null || true
           rm server.pid
         fi
+        # Kill any remaining processes on ports 3000/3001
+        sudo fuser -k 3000/tcp 3001/tcp 2>/dev/null || true
 
-    # Debug logs if tests fail
-    - name: Show service logs on failure
-      if: failure()
-      run: |
-        echo "=== PostgreSQL logs ==="
-        docker logs postgres-container || echo "No PostgreSQL logs available"
-        echo ""
-        echo "=== Redis logs ==="
-        docker logs redis-container || echo "No Redis logs available"
-
-    - name: Upload test results
+    - name: Upload test results and logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: test-results
+        name: test-results-and-logs
         path: |
           pytest-report.html
           .pytest_cache/
+          server.log
+          *.log
         retention-days: 7
 
     - name: Test Summary
@@ -204,11 +354,13 @@ jobs:
           echo "✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
         else
           echo "❌ Some tests failed. Check the logs above." >> $GITHUB_STEP_SUMMARY
+          echo "Server log artifact has been uploaded for debugging." >> $GITHUB_STEP_SUMMARY
         fi
 
   kubernetes-integration-tests:
     runs-on: ubuntu-latest
     needs: integration-tests
+    if: success() # Only run if integration tests pass
     
     steps:
     - name: Checkout code
