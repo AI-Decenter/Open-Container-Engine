@@ -65,6 +65,12 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
+    # Install Redis CLI for testing
+    - name: Install Redis CLI
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y redis-tools
+
     # Verify services are running trước khi tiếp tục
     - name: Verify PostgreSQL is running
       run: |
@@ -88,7 +94,7 @@ jobs:
         echo "Checking Redis status..."
         docker ps -a | grep redis
         
-        # Test Redis connection
+        # Test Redis connection using the installed redis-cli
         redis-cli -h localhost -p 6379 ping
         echo "✅ Redis is ready"
 
