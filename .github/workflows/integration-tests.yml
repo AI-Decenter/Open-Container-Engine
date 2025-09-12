@@ -21,11 +21,16 @@ jobs:
           POSTGRES_DB: container_engine_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
+          # Thêm các env variables quan trọng cho GitHub Actions
+          POSTGRES_HOST_AUTH_METHOD: trust
+          PGDATA: /var/lib/postgresql/data/pgdata
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d container_engine_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
+          --health-start-period 30s
+          --name postgres-container
         ports:
           - 5432:5432
       
@@ -36,6 +41,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --name redis-container
         ports:
           - 6379:6379
 
@@ -58,6 +64,33 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-
+
+    # Verify services are running trước khi tiếp tục
+    - name: Verify PostgreSQL is running
+      run: |
+        echo "Checking PostgreSQL status..."
+        docker ps -a | grep postgres
+        
+        # Wait for PostgreSQL to be fully ready
+        timeout 60 bash -c '
+          until pg_isready -h localhost -p 5432 -U postgres; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+        '
+        
+        # Test connection
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d container_engine_test -c "SELECT version();"
+        echo "✅ PostgreSQL is ready"
+
+    - name: Verify Redis is running
+      run: |
+        echo "Checking Redis status..."
+        docker ps -a | grep redis
+        
+        # Test Redis connection
+        redis-cli -h localhost -p 6379 ping
+        echo "✅ Redis is ready"
 
     - name: Install SQLx CLI
       run: cargo install sqlx-cli --no-default-features --features postgres
@@ -100,6 +133,10 @@ jobs:
 
     - name: Run database migrations
       run: |
+        # Ensure database is accessible before running migrations
+        PGPASSWORD=password psql -h localhost -p 5432 -U postgres -d container_engine_test -c "\l"
+        
+        echo "Running database migrations..."
         sqlx migrate run --database-url postgresql://postgres:password@localhost:5432/container_engine_test
 
     - name: Start Container Engine server in background
@@ -110,7 +147,14 @@ jobs:
         echo $! > server.pid
         
         # Wait for server to be ready (using port 3001 for integration tests)
-        timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+        echo "Waiting for server to start..."
+        timeout 60 bash -c '
+          while ! curl -f http://localhost:3001/health 2>/dev/null; do
+            echo "Waiting for server..."
+            sleep 2
+          done
+        '
+        echo "✅ Server is ready"
 
     - name: Run integration tests
       run: |
@@ -124,6 +168,16 @@ jobs:
           kill $(cat server.pid) || true
           rm server.pid
         fi
+
+    # Debug logs if tests fail
+    - name: Show service logs on failure
+      if: failure()
+      run: |
+        echo "=== PostgreSQL logs ==="
+        docker logs postgres-container || echo "No PostgreSQL logs available"
+        echo ""
+        echo "=== Redis logs ==="
+        docker logs redis-container || echo "No Redis logs available"
 
     - name: Upload test results
       if: always()
@@ -234,6 +288,8 @@ jobs:
                   value: postgres
                 - name: POSTGRES_PASSWORD
                   value: password
+                - name: POSTGRES_HOST_AUTH_METHOD
+                  value: trust
                 - name: PGDATA
                   value: /var/lib/postgresql/data/pgdata
                 ports:
@@ -248,16 +304,33 @@ jobs:
                     - pg_isready
                     - -U
                     - postgres
-                  initialDelaySeconds: 5
+                    - -d
+                    - container_engine_test
+                  initialDelaySeconds: 10
                   periodSeconds: 5
+                  timeoutSeconds: 5
+                  successThreshold: 1
+                  failureThreshold: 3
                 livenessProbe:
                   exec:
                     command:
                     - pg_isready
                     - -U
                     - postgres
+                    - -d
+                    - container_engine_test
                   initialDelaySeconds: 30
                   periodSeconds: 10
+                  timeoutSeconds: 5
+                  successThreshold: 1
+                  failureThreshold: 3
+                resources:
+                  requests:
+                    memory: "256Mi"
+                    cpu: "100m"
+                  limits:
+                    memory: "512Mi"
+                    cpu: "500m"
               volumes:
               - name: postgres-storage
                 emptyDir: {}
@@ -315,6 +388,7 @@ jobs:
                     - ping
                   initialDelaySeconds: 5
                   periodSeconds: 5
+                  timeoutSeconds: 3
                 livenessProbe:
                   exec:
                     command:
@@ -322,9 +396,17 @@ jobs:
                     - ping
                   initialDelaySeconds: 30
                   periodSeconds: 10
+                  timeoutSeconds: 3
                 volumeMounts:
                 - name: redis-storage
                   mountPath: /data
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "50m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "100m"
               volumes:
               - name: redis-storage
                 emptyDir: {}
@@ -352,8 +434,16 @@ jobs:
         echo "Waiting for Redis to be ready..."
         kubectl wait --for=condition=available --timeout=300s deployment/redis -n container-engine-test
         
+        # Wait for pods to be fully ready
+        kubectl wait --for=condition=ready --timeout=300s pod -l app=postgres -n container-engine-test
+        kubectl wait --for=condition=ready --timeout=300s pod -l app=redis -n container-engine-test
+        
         echo "Checking pod status..."
         kubectl get pods -n container-engine-test
+        
+        # Test database connectivity
+        kubectl exec -n container-engine-test deployment/postgres -- pg_isready -U postgres -d container_engine_test
+        kubectl exec -n container-engine-test deployment/redis -- redis-cli ping
         
         echo "✅ Database services are ready" >> $GITHUB_STEP_SUMMARY
 
@@ -409,14 +499,20 @@ jobs:
                   httpGet:
                     path: /health
                     port: 3000
-                  initialDelaySeconds: 10
+                  initialDelaySeconds: 15
                   periodSeconds: 5
+                  timeoutSeconds: 3
+                  successThreshold: 1
+                  failureThreshold: 3
                 livenessProbe:
                   httpGet:
                     path: /health
                     port: 3000
                   initialDelaySeconds: 30
                   periodSeconds: 10
+                  timeoutSeconds: 5
+                  successThreshold: 1
+                  failureThreshold: 3
                 resources:
                   requests:
                     memory: "128Mi"
@@ -445,6 +541,9 @@ jobs:
         echo "Waiting for Container Engine application to be ready..."
         kubectl wait --for=condition=available --timeout=300s deployment/container-engine -n container-engine-test
         
+        # Wait for pods to be ready
+        kubectl wait --for=condition=ready --timeout=300s pod -l app=container-engine -n container-engine-test
+        
         echo "Checking application pods..."
         kubectl get pods -n container-engine-test -l app=container-engine
         
@@ -459,11 +558,19 @@ jobs:
         PORT_FORWARD_PID=$!
         
         # Wait for port forward to be ready
-        sleep 10
+        sleep 15
         
-        # Test health endpoint
+        # Test health endpoint with retries
         echo "Testing health endpoint..."
-        curl -f http://localhost:3000/health || (echo "Health check failed" && exit 1)
+        for i in {1..10}; do
+          if curl -f http://localhost:3000/health; then
+            echo "Health check successful on attempt $i"
+            break
+          else
+            echo "Health check failed on attempt $i, retrying..."
+            sleep 2
+          fi
+        done
         
         # Test API endpoints if available
         echo "Testing API endpoints..."
@@ -485,7 +592,7 @@ jobs:
         PORT_FORWARD_PID=$!
         
         # Wait for port forward
-        sleep 10
+        sleep 15
         
         # Run Python integration tests against Kubernetes deployment
         if [ -d "tests/k8s" ]; then
@@ -508,6 +615,10 @@ jobs:
         echo "## Application Logs" >> $GITHUB_STEP_SUMMARY
         echo "Container Engine application logs:" >> $GITHUB_STEP_SUMMARY
         kubectl logs -l app=container-engine -n container-engine-test --tail=50 || echo "No logs available"
+        
+        # Also check database logs if there are issues
+        echo "PostgreSQL logs:"
+        kubectl logs -l app=postgres -n container-engine-test --tail=20 || echo "No PostgreSQL logs available"
 
     - name: Cleanup Kubernetes resources
       if: always()
