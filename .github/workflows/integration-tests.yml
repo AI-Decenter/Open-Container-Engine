@@ -174,7 +174,7 @@ jobs:
         echo $! > server.pid
         
         # Wait for server to be ready (using port 3001 for integration tests)
-        timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:3000/health; do sleep 2; done'
 
     - name: Show server status and logs
       run: |
