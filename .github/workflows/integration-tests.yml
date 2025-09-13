@@ -137,7 +137,9 @@ jobs:
         # Override specific variables for GitHub Actions environment
         echo "DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine_test" >> $GITHUB_ENV
         echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
-
+    - name: Run integration tests
+      run: |
+        ./run_tests.sh
     - name: Run database migrations
       run: |
         # Ensure database is accessible before running migrations
