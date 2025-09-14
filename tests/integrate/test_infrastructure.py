@@ -9,12 +9,12 @@ import os
 # Add the project root to the Python path for standalone execution
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
-from tests.integrate.conftest import TestConfig, APIClient
+from tests.conftest import TestConfig, APIClient
 
 
 def test_config_values():
     """Test that configuration values are set correctly"""
-    assert TestConfig.BASE_URL == "http://localhost:3000"
+    assert TestConfig.BASE_URL == "http://localhost:3001"
     assert TestConfig.DB_NAME == "container_engine_test"
     assert TestConfig.REDIS_URL == "redis://localhost:6379"
 
@@ -70,7 +70,7 @@ def test_request_url_construction():
     
     # Test URL construction
     client.get("/test/endpoint")
-    assert captured_url == "http://localhost:3000/test/endpoint"
+    assert captured_url == "http://localhost:3001/test/endpoint"
     
     # Restore original method
     client.session.request = original_request

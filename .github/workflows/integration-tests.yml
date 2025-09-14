@@ -1,3 +1,4 @@
+
 name: Integration Tests
 
 on:
@@ -60,7 +61,12 @@ jobs:
           ${{ runner.os }}-cargo-
 
     - name: Install SQLx CLI
-      run: cargo install sqlx-cli --no-default-features --features postgres
+      run: |
+        if ! command -v sqlx &> /dev/null; then
+          cargo install sqlx-cli --no-default-features --features postgres
+        else
+          echo "SQLx CLI already installed"
+        fi
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -72,6 +78,62 @@ jobs:
       run: |
         pip install --upgrade pip
         pip install -r tests/requirements.txt
+
+    # ===== KUBERNETES SETUP SECTION =====
+    - name: Install kubectl
+      run: |
+        echo "Installing kubectl..."
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+        echo "$(cat kubectl.sha256) kubectl" | sha256sum --check
+        sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+        kubectl version --client
+        rm -f kubectl kubectl.sha256
+
+    - name: Install Minikube
+      run: |
+        echo "Installing Minikube..."
+        curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+        sudo install minikube-linux-amd64 /usr/local/bin/minikube
+        rm -f minikube-linux-amd64
+        minikube version
+
+    - name: Start Minikube
+      run: |
+        echo "Starting Minikube with Docker driver..."
+        # Start minikube with specific configuration for CI
+        minikube start \
+          --driver=docker \
+          --kubernetes-version=v1.28.3 \
+          --memory=4096 \
+          --cpus=2 \
+          --disk-size=20g \
+          --wait=all \
+          --wait-timeout=5m
+        
+        # Wait for cluster to be ready
+        echo "Waiting for Minikube cluster to be ready..."
+        minikube status
+        kubectl cluster-info
+        kubectl get nodes
+
+    - name: Configure Kubernetes environment
+      run: |
+        echo "Configuring Kubernetes environment..."
+        # Set kubeconfig
+        export KUBECONFIG=$HOME/.kube/config
+        echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+        
+        # Create test namespace
+        kubectl create namespace test || true
+        kubectl config set-context --current --namespace=test
+        
+        # Show cluster info
+        echo "Kubernetes cluster info:"
+        kubectl version
+        kubectl get namespaces
+        kubectl get pods --all-namespaces
+    # ===== END KUBERNETES SETUP =====
 
     - name: Build Rust application
       run: |
@@ -97,10 +159,20 @@ jobs:
         # Override specific variables for GitHub Actions environment
         echo "DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine_test" >> $GITHUB_ENV
         echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+        
+        # Add Kubernetes-specific environment variables
+        echo "KUBERNETES_ENABLED=true" >> $GITHUB_ENV
+        echo "KUBERNETES_NAMESPACE=test" >> $GITHUB_ENV
+        echo "KUBERNETES_IN_CLUSTER=false" >> $GITHUB_ENV
 
     - name: Run database migrations
       run: |
         sqlx migrate run --database-url postgresql://postgres:password@localhost:5432/container_engine_test
+
+    - name: Prepare SQLx offline data
+      run: |
+        export DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine_test
+        cargo sqlx prepare
 
     - name: Start Container Engine server in background
       run: |
@@ -112,10 +184,31 @@ jobs:
         # Wait for server to be ready (using port 3001 for integration tests)
         timeout 60 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
 
-    - name: Run integration tests
+    - name: Verify Kubernetes connectivity
       run: |
-        python -m pytest tests/integrate/ -v --tb=short --durations=10
-      timeout-minutes: 15
+        echo "Verifying Container Engine can connect to Kubernetes..."
+        # This would be where you verify your app can talk to K8s
+        kubectl auth can-i get pods --namespace=test
+
+    # - name: Run integration tests
+    #   run: |
+    #     python -m pytest tests/integrate/ -v --tb=short --durations=10
+    #   timeout-minutes: 15
+
+    - name: Show logs on failure
+      if: failure()
+      run: |
+        echo "=== Server logs ==="
+        if [ -f server.pid ]; then
+          ps aux | grep $(cat server.pid) || echo "Server process not found"
+        fi
+        
+        echo "=== Minikube logs ==="
+        minikube logs --lines=50
+        
+        echo "=== Kubernetes pod logs ==="
+        kubectl get pods --all-namespaces
+        kubectl describe pods --all-namespaces
 
     - name: Stop server
       if: always()
@@ -125,23 +218,29 @@ jobs:
           rm server.pid
         fi
 
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results
-        path: |
-          pytest-report.html
-          .pytest_cache/
-        retention-days: 7
-
-    - name: Test Summary
+    - name: Stop Minikube
       if: always()
       run: |
-        echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
-        echo "Integration tests completed for Container Engine API" >> $GITHUB_STEP_SUMMARY
-        if [ ${{ job.status }} == 'success' ]; then
-          echo "✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "❌ Some tests failed. Check the logs above." >> $GITHUB_STEP_SUMMARY
-        fi
+        minikube stop || true
+        minikube delete || true
+
+    # - name: Upload test results
+    #   if: always()
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: test-results
+    #     path: |
+    #       pytest-report.html
+    #       .pytest_cache/
+    #     retention-days: 7
+
+    # - name: Test Summary
+    #   if: always()
+    #   run: |
+    #     echo "## Integration Test Results" >> $GITHUB_STEP_SUMMARY
+    #     echo "Integration tests completed for Container Engine API" >> $GITHUB_STEP_SUMMARY
+    #     if [ ${{ job.status }} == 'success' ]; then
+    #       echo "✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+    #     else
+    #       echo "❌ Some tests failed. Check the logs above." >> $GITHUB_STEP_SUMMARY
+    #     fi

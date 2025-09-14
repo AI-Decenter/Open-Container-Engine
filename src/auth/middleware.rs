@@ -48,6 +48,7 @@ fn extract_token_from_headers(headers: &HeaderMap) -> Result<String, AppError> {
 }
 
 async fn verify_api_key(state: &AppState, api_key: &str) -> Result<Uuid, AppError> {
+    print!("Verifying API key: {}", api_key);
     // Extract prefix to find the API key
     let prefix = &api_key[..state.config.api_key_prefix.len().min(api_key.len())];
     
@@ -76,9 +77,9 @@ async fn verify_api_key(state: &AppState, api_key: &str) -> Result<Uuid, AppErro
 
                 Ok(record.user_id)
             } else {
-                Err(AppError::auth("Invalid API key"))
+                Err(AppError::auth("Invalid API key "))
             }
         }
-        None => Err(AppError::auth("Invalid API key")),
+        None => Err(AppError::auth("Invalid API key ")),
     }
 }

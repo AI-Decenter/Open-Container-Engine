@@ -8,3 +8,4 @@ docker>=6.0.0
 pytest-mock>=3.10.0
 pytest-timeout>=2.1.0
 pydantic>=2.0.0
+pytest-forked>=1.4.0

@@ -57,17 +57,18 @@ def authenticated_client(api_client):
     api_client.clear_auth()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def api_key_client(authenticated_client):
     """Fixture to provide API client with API key authentication"""
     from tests.integrate.conftest import create_test_api_key
-    
+    import time
     client, user_info = authenticated_client
     api_key_info = create_test_api_key(client)
-    
+    time.sleep(0.1)
     # Switch to API key authentication
     client.clear_auth()
-    client.set_api_key(api_key_info["apiKey"])
+    time.sleep(0.1)
+    client.set_api_key(api_key_info["api_key"])
     
     yield client, api_key_info, user_info
     
