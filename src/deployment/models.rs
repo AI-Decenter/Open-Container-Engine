@@ -92,7 +92,7 @@ pub struct DeploymentResponse {
     pub app_name: String,
     pub image: String,
     pub status: String,
-    pub url: String,
+    pub url: Option<String>,
     pub created_at: DateTime<Utc>,
     pub message: String,
 }

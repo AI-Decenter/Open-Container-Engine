@@ -10,7 +10,7 @@ import DeploymentDetailPage from './pages/DeploymentDetailPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import AccountSettingsPage from './pages/AccountSettingsPage';
 import ProtectedRoute from './components/ProtectedRoute';
-import { ToastContainer, toast } from 'react-toastify';
+import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
 function App() {

@@ -7,7 +7,7 @@ license = "MIT"
 repository = "https://github.com/ngocbd/Open-Container-Engine"
 
 [dependencies]
-
+open = "5"
 # Web framework
 axum = { version = "0.7", features = ["macros", "tracing"] }
 tokio = { version = "1.0", features = ["full"] }

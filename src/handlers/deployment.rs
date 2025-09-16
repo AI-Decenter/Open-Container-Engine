@@ -49,9 +49,10 @@ pub async fn create_deployment(
         .health_check
         .map(|hc| serde_json::to_value(hc))
         .transpose()?;
+    tracing::debug!("Inserting deployment record into database");
 
     sqlx::query!(
-            r#"
+        r#"
             INSERT INTO deployments (
                 id, user_id, app_name, image, port, env_vars, replicas,
                 resources, health_check, status, url, created_at, updated_at,
@@ -59,28 +60,27 @@ pub async fn create_deployment(
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             "#,
-            deployment_id,
-            user.user_id,
-            payload.app_name,
-            payload.image,
-            payload.port,
-            env_vars_json,
-            payload.replicas.unwrap_or(1),
-            resources,
-            health_check,
-            "pending",
-            url,
-            now,
-            now,
-            Option::<chrono::DateTime<chrono::Utc>>::None, // deployed_at - null initially
-            None::<String>         // error_message
-        )
-        .execute(&state.db.pool)
-        .await?;
-
-    println!("Inserted deployment record into database");
-
+        deployment_id,
+        user.user_id,
+        payload.app_name,
+        payload.image,
+        payload.port,
+        env_vars_json,
+        payload.replicas.unwrap_or(1),
+        resources,
+        health_check,
+        "pending",
+        "".to_string(), // url will be set after deployment
+        now,
+        now,
+        Option::<chrono::DateTime<chrono::Utc>>::None, // deployed_at - null initially
+        None::<String>                                 // error_message
+    )
+    .execute(&state.db.pool)
+    .await?;
+    tracing::info!("Successfully inserted deployment record into database");
     // TODO: Implement Kubernetes deployment logic here
+    tracing::debug!("Creating deployment job");
     let job = DeploymentJob::new(
         deployment_id,
         user.user_id,
@@ -92,7 +92,7 @@ pub async fn create_deployment(
         resources,
         health_check,
     );
-
+    tracing::debug!("Sending job to deployment queue");
     if let Err(_) = state.deployment_sender.send(job).await {
         // Rollback the database record
         let _ = sqlx::query!("DELETE FROM deployments WHERE id = $1", deployment_id)
@@ -101,6 +101,7 @@ pub async fn create_deployment(
 
         return Err(AppError::internal("Failed to queue deployment"));
     }
+    tracing::info!("Deployment system initialized successfully");
 
     // For now, we'll just return the response
 
@@ -109,7 +110,7 @@ pub async fn create_deployment(
         app_name: payload.app_name,
         image: payload.image,
         status: "pending".to_string(),
-        url,
+        url: None,
         created_at: now,
         message: "Deployment is being processed".to_string(),
     }))

@@ -65,9 +65,9 @@ const NewDeploymentPage: React.FC = () => {
         replicas,
       });
       setSuccess(`Deployment '${response.data.app_name}' created! URL: ${response.data.url}`);
-      if(response.data.id){
-        navigate(`/deployments/${response.data.id}`); 
-      }
+      if (response.data.id) {
+        navigate(`/deployments/${response.data.id}`);
+      } else return;
     } catch (err: any) {
       setError(err.response?.data || 'An unexpected error occurred.');
     } finally {

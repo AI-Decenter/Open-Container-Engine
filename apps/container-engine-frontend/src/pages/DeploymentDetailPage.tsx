@@ -11,7 +11,6 @@ import {
   ClipboardDocumentListIcon,
   GlobeAltIcon,
   ArrowLeftIcon,
-  PlayIcon,
   StopIcon,
   ArrowPathIcon,
   ExclamationTriangleIcon,

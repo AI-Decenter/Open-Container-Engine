@@ -53,14 +53,9 @@ impl DeploymentWorker {
         );
 
         // Update status to "deploying"
-        if let Err(e) = Self::update_deployment_status(
-            &db_pool,
-            job.deployment_id,
-            "deploying",
-            None,
-            None,
-        )
-        .await
+        if let Err(e) =
+            Self::update_deployment_status(&db_pool, job.deployment_id, "deploying", None, None)
+                .await
         {
             error!("Failed to update deployment status to deploying: {}", e);
             return;
@@ -71,31 +66,48 @@ impl DeploymentWorker {
             Ok(_) => {
                 info!("Successfully deployed to Kubernetes: {}", job.deployment_id);
 
-                // Poll for external IP
-                let public_ip = Self::wait_for_external_ip(&k8s_service, job.deployment_id).await;
-                let public_url = public_ip.as_ref().map(|ip| format!("http://{}:80", ip));
+                // Get the ingress URL after successful deployment
+                match k8s_service.get_ingress_url(&job.deployment_id).await {
+                    Ok(ingress_url) => {
+                        info!("Retrieved ingress URL: {:?}", ingress_url);
 
-                // Update deployment with success status
-                if let Err(e) = Self::update_deployment_status(
-                    &db_pool,
-                    job.deployment_id,
-                    "running",
-                    public_url.as_deref(),
-                    None,
-                )
-                .await
-                {
-                    error!("Failed to update deployment status to running: {}", e);
-                } else {
-                    info!("Deployment {} completed successfully", job.deployment_id);
-                    if let Some(ip) = public_ip {
-                        info!("Public IP assigned: {}", ip);
+                        // Update deployment with success status and URL
+                        if let Err(e) = Self::update_deployment_status(
+                            &db_pool,
+                            job.deployment_id,
+                            "running",
+                            ingress_url.as_deref(),
+                            None,
+                        )
+                        .await
+                        {
+                            error!("Failed to update deployment status to running: {}", e);
+                        } else {
+                            info!("Deployment {} completed successfully", job.deployment_id);
+                            if let Some(url) = ingress_url {
+                                info!("Ingress URL available: {}", url);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to get ingress URL: {}", e);
+                        // Still mark as running since deployment succeeded, just no URL yet
+                        if let Err(e) = Self::update_deployment_status(
+                            &db_pool,
+                            job.deployment_id,
+                            "running",
+                            None,
+                            Some("Deployment successful but ingress URL not ready yet"),
+                        )
+                        .await
+                        {
+                            error!("Failed to update deployment status: {}", e);
+                        }
                     }
                 }
             }
             Err(e) => {
                 error!("Failed to deploy to Kubernetes: {}", e);
-
                 // Update deployment with failed status
                 if let Err(db_err) = Self::update_deployment_status(
                     &db_pool,

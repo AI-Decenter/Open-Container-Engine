@@ -39,6 +39,74 @@ log_warning() {
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
+# Function to open browser
+open_browser() {
+    local url="${1:-http://localhost:3000}"
+    
+    log_info "Opening browser at: $url"
+    
+    # Detect OS and open browser accordingly
+    case "$OSTYPE" in
+        linux-gnu*)
+            # Linux
+            if command_exists xdg-open; then
+                xdg-open "$url" 2>/dev/null &
+            elif command_exists gnome-open; then
+                gnome-open "$url" 2>/dev/null &
+            elif command_exists kde-open; then
+                kde-open "$url" 2>/dev/null &
+            else
+                log_warning "Could not detect browser opener. Please open manually: $url"
+                return 1
+            fi
+            ;;
+        darwin*)
+            # macOS
+            open "$url" 2>/dev/null &
+            ;;
+        msys*|cygwin*|mingw*)
+            # Windows (Git Bash/MinGW)
+            start "$url" 2>/dev/null &
+            ;;
+        *)
+            log_warning "Unknown OS type: $OSTYPE. Please open manually: $url"
+            return 1
+            ;;
+    esac
+    
+    log_success "Browser opened successfully"
+}
+
+# Function to wait for server and open browser
+wait_and_open_browser() {
+    local port="${1:-3000}"
+    local path="${2:-}"
+    local max_retries=30
+    local retry_count=0
+    
+    log_info "Waiting for server to be ready..."
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if curl -s -o /dev/null "http://localhost:$port/health" 2>/dev/null; then
+            log_success "Server is ready!"
+            open_browser "http://localhost:$port$path"
+            return 0
+        fi
+        
+        sleep 1
+        retry_count=$((retry_count + 1))
+        
+        if [ $((retry_count % 5)) -eq 0 ]; then
+            log_info "Still waiting for server... ($retry_count/$max_retries)"
+        fi
+    done
+    
+    log_warning "Server did not become ready within 30 seconds"
+    return 1
+}
+start_dev_no_browser() {
+    AUTO_OPEN_BROWSER=false start_dev
+}
 
 # Show help
 show_help() {
@@ -63,7 +131,9 @@ COMMANDS:
     db-reset           Reset database and volumes
     migrate            Run database migrations
     sqlx-prepare       Prepare SQLx queries for offline compilation
-    dev                Start development server
+    dev                Start development server (auto-opens browser)
+    dev-no-browser     Start development server without opening browser
+    open               Open browser to development server
     build              Build the project
     test               Run tests
     format             Format code
@@ -73,12 +143,14 @@ COMMANDS:
     docker-up          Start all services with Docker
     docker-down        Stop all Docker services
 
+ENVIRONMENT VARIABLES:
+    AUTO_OPEN_BROWSER  Set to 'false' to disable auto-opening browser (default: true)
+
 EXAMPLES:
     ./setup.sh setup           # Full initial setup
-    ./setup.sh setup-k8s       # Setup with Kubernetes support
-    ./setup.sh install-minikube # Install Minikube only
-    ./setup.sh dev             # Start development server
-    ./setup.sh db-reset        # Reset database
+    ./setup.sh dev             # Start dev server with browser
+    AUTO_OPEN_BROWSER=false ./setup.sh dev  # Start without browser
+    ./setup.sh open            # Open browser to running server
 EOF
 }
 
@@ -806,13 +878,54 @@ start_dev() {
 
     # Run migrations if needed
     export DATABASE_URL="$DATABASE_URL"
+    export REDIS_URL="$REDIS_URL"
+    
     if ! sqlx migrate info >/dev/null 2>&1; then
         run_migrations
     fi
 
-    log_info "Starting server at http://localhost:3000"
-    log_info "API documentation available at http://localhost:3000/api-docs/openapi.json"
-    cargo run
+    # Check if we should auto-open browser
+    local auto_open_browser="${AUTO_OPEN_BROWSER:-true}"
+    
+    # Start the server in background if auto-opening browser
+    if [ "$auto_open_browser" = "true" ]; then
+        log_info "Starting server with auto-browser opening..."
+        
+        # Start server in background
+        cargo run &
+        local server_pid=$!
+        
+        # Wait for server to be ready and open browser
+        if wait_and_open_browser 3000 "/auth"; then
+            log_info "Server is running at http://localhost:3000"
+            log_info "API documentation available at http://localhost:3000/swagger-ui"
+            
+            # Wait for the server process
+            wait $server_pid
+        else
+            # Kill the server if browser opening failed
+            kill $server_pid 2>/dev/null
+            log_error "Failed to start server properly"
+            return 1
+        fi
+    else
+        # Normal server start without browser opening
+        log_info "Starting server at http://localhost:3000"
+        log_info "API documentation available at http://localhost:3000/swagger-ui"
+        cargo run
+    fi
+}
+# New command to just open browser
+open_dev_browser() {
+    log_info "Opening development browser..."
+    
+    # Check if server is running
+    if curl -s -o /dev/null "http://localhost:3000/health" 2>/dev/null; then
+        open_browser "http://localhost:3000/auth"
+    else
+        log_warning "Server is not running. Start it first with: ./setup.sh dev"
+        return 1
+    fi
 }
 
 build_project() {
@@ -924,6 +1037,10 @@ case "${1:-help}" in
     setup)
         full_setup
         ;;
+    setup-k8s)
+        full_setup
+        install_minikube
+        ;;
     check)
         check_dependencies
         ;;
@@ -959,6 +1076,12 @@ case "${1:-help}" in
         ;;
     dev)
         start_dev
+        ;;
+    dev-no-browser)
+        start_dev_no_browser
+        ;;
+    open)
+        open_dev_browser
         ;;
     build)
         build_project
