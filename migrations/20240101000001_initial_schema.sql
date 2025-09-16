@@ -37,6 +37,7 @@ CREATE TABLE deployments (
     health_check JSONB,
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     url VARCHAR(255) NOT NULL,
+    error_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deployed_at TIMESTAMPTZ,

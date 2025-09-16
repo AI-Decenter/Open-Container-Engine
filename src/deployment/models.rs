@@ -17,13 +17,14 @@ pub struct Deployment {
     pub port: i32,
     pub env_vars: Value, // JSON object
     pub replicas: i32,
-    pub resources: Value, // JSON object
+    pub resources: Value,            // JSON object
     pub health_check: Option<Value>, // JSON object
     pub status: String,
     pub url: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deployed_at: Option<DateTime<Utc>>,
+    pub error_message: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate, ToSchema)]

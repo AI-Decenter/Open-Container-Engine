@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO deployments (\n                id, user_id, app_name, image, port, env_vars, replicas,\n                resources, health_check, status, url, created_at, updated_at,\n                deployed_at, error_message\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Jsonb",
+        "Int4",
+        "Jsonb",
+        "Jsonb",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f25d59b43be81bc2b7c605fba643c6ada67bbf410b13937e49624909bd523cea"
+}

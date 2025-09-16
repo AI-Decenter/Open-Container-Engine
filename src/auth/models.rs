@@ -42,7 +42,7 @@ pub struct RegisterRequest {
     #[validate(email)]
     pub email: String,
     /// Password must be at least 8 characters
-    #[validate(length(min = 8))]
+    // #[validate(length(min = 8))]
     pub password: String,
     /// Must match the password field
     pub confirm_password: String,

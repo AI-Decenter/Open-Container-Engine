@@ -36,7 +36,9 @@ pub async fn register(
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<Value>, AppError> {
     payload.validate()?;
-
+    if payload.password.len() < 8 {
+        return Err(AppError::bad_request("Password must be at least 8 characters long"));
+    }
     if payload.password != payload.confirm_password {
         return Err(AppError::bad_request("Passwords do not match"));
     }

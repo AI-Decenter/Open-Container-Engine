@@ -9,11 +9,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
-    AppState,
-    auth::AuthUser,
-    deployment::models::*,
-    error::AppError,
-    handlers::auth::PaginationQuery,
+    auth::AuthUser, deployment::models::*, error::AppError, handlers::auth::PaginationQuery,
+    AppState, DeploymentJob,
 };
 
 pub async fn create_deployment(
@@ -38,39 +35,73 @@ pub async fn create_deployment(
 
     let deployment_id = Uuid::new_v4();
     let now = Utc::now();
-    let url = format!("https://{}.{}", payload.app_name, state.config.domain_suffix);
-    
+    let url = format!(
+        "https://{}.{}",
+        payload.app_name, state.config.domain_suffix
+    );
+
     // Convert optional fields to JSON
-    let env_vars = serde_json::to_value(payload.env_vars.unwrap_or_default())?;
-    let resources = serde_json::to_value(payload.resources.unwrap_or_default())?;
-    let health_check = payload.health_check.map(|hc| serde_json::to_value(hc)).transpose()?;
+    let env_vars_for_job = payload.env_vars.clone();
+    let env_vars_value = payload.env_vars.unwrap_or_default();
+    let env_vars_json = serde_json::to_value(&env_vars_value)?;
+    let resources = Some(serde_json::to_value(payload.resources.unwrap_or_default())?);
+    let health_check = payload
+        .health_check
+        .map(|hc| serde_json::to_value(hc))
+        .transpose()?;
 
     sqlx::query!(
-        r#"
-        INSERT INTO deployments (
-            id, user_id, app_name, image, port, env_vars, replicas, 
-            resources, health_check, status, url, created_at, updated_at
+            r#"
+            INSERT INTO deployments (
+                id, user_id, app_name, image, port, env_vars, replicas,
+                resources, health_check, status, url, created_at, updated_at,
+                deployed_at, error_message
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            "#,
+            deployment_id,
+            user.user_id,
+            payload.app_name,
+            payload.image,
+            payload.port,
+            env_vars_json,
+            payload.replicas.unwrap_or(1),
+            resources,
+            health_check,
+            "pending",
+            url,
+            now,
+            now,
+            Option::<chrono::DateTime<chrono::Utc>>::None, // deployed_at - null initially
+            None::<String>         // error_message
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        "#,
-        deployment_id,
-        user.user_id,
-        payload.app_name,
-        payload.image,
-        payload.port,
-        env_vars,
-        payload.replicas.unwrap_or(1),
-        resources,
-        health_check,
-        "pending",
-        url,
-        now,
-        now
-    )
-    .execute(&state.db.pool)
-    .await?;
+        .execute(&state.db.pool)
+        .await?;
+
+    println!("Inserted deployment record into database");
 
     // TODO: Implement Kubernetes deployment logic here
+    let job = DeploymentJob::new(
+        deployment_id,
+        user.user_id,
+        payload.app_name.clone(),
+        payload.image.clone(),
+        payload.port,
+        env_vars_for_job,
+        payload.replicas,
+        resources,
+        health_check,
+    );
+
+    if let Err(_) = state.deployment_sender.send(job).await {
+        // Rollback the database record
+        let _ = sqlx::query!("DELETE FROM deployments WHERE id = $1", deployment_id)
+            .execute(&state.db.pool)
+            .await;
+
+        return Err(AppError::internal("Failed to queue deployment"));
+    }
+
     // For now, we'll just return the response
 
     Ok(Json(DeploymentResponse {
@@ -167,8 +198,14 @@ pub async fn update_deployment(
     .ok_or_else(|| AppError::not_found("Deployment"))?;
 
     // Update deployment
-    let env_vars = payload.env_vars.map(|ev| serde_json::to_value(ev)).transpose()?;
-    let resources = payload.resources.map(|r| serde_json::to_value(r)).transpose()?;
+    let env_vars = payload
+        .env_vars
+        .map(|ev| serde_json::to_value(ev))
+        .transpose()?;
+    let resources = payload
+        .resources
+        .map(|r| serde_json::to_value(r))
+        .transpose()?;
 
     sqlx::query!(
         r#"
@@ -326,9 +363,7 @@ pub async fn get_logs(
     _query: Query<LogsQuery>,
 ) -> Result<Json<LogsResponse>, AppError> {
     // TODO: Implement Kubernetes logs retrieval
-    Ok(Json(LogsResponse {
-        logs: vec![],
-    }))
+    Ok(Json(LogsResponse { logs: vec![] }))
 }
 
 pub async fn get_metrics(
@@ -379,9 +414,7 @@ pub async fn list_domains(
     _deployment_id: Path<Uuid>,
 ) -> Result<Json<DomainListResponse>, AppError> {
     // TODO: Implement domain listing
-    Ok(Json(DomainListResponse {
-        domains: vec![],
-    }))
+    Ok(Json(DomainListResponse { domains: vec![] }))
 }
 
 pub async fn add_domain(
