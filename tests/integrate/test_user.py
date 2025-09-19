@@ -17,7 +17,6 @@ class TestGetUserProfile:
         
         assert response.status_code == 200
         data = response.json()
-        print("dât ne",data)
         
         # Verify response structure
         assert "id" in data

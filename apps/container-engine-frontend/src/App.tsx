@@ -1,7 +1,7 @@
 // src/App.tsx
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-
+import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import DeploymentsPage from './pages/DeploymentsPage';
@@ -13,6 +13,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+
 function App() {
   return (
     <>
@@ -20,6 +21,7 @@ function App() {
       <AuthProvider>
         <Router>
           <Routes>
+            <Route path="/" element={<LandingPage />} /> 
             <Route path="/auth" element={<AuthPage />} />
 
             {/* Protected Routes */}

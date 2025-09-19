@@ -1,3 +1,7 @@
+# Kubernetes config files
+k8sConfig.yaml
+k8sConfigLocal.yaml
+*.kubeconfig
 # Rust
 /target/
 Cargo.lock
@@ -13,6 +17,7 @@ Cargo.lock
 Thumbs.db
 
 # Environment
+.env.production
 .env
 .env.local
 

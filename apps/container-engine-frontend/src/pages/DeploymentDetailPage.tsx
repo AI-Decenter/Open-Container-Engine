@@ -1,8 +1,9 @@
 // src/pages/DeploymentDetailPage.tsx
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import api from '../api/api';
 import DashboardLayout from '../components/Layout/DashboardLayout';
+import LogsPage from '../components/DeploymentDetail/LogsPage';
 import {
   RocketLaunchIcon,
   CubeIcon,
@@ -59,6 +60,8 @@ const DeploymentDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const [deployment, setDeployment] = useState<DeploymentDetails | null>(null);
   const [logs, setLogs] = useState<DeploymentLogs[]>([]);
+  console.log(logs);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'domains' | 'settings'>('overview');
@@ -93,6 +96,7 @@ const DeploymentDetailPage: React.FC = () => {
 
     const fetchData = async () => {
       try {
+        
         setLoading(true);
         const [detailsRes, logsRes] = await Promise.all([
           api.get(`/v1/deployments/${deploymentId}`),
@@ -110,7 +114,7 @@ const DeploymentDetailPage: React.FC = () => {
     };
 
     fetchData();
-  }, [deploymentId]);
+  }, []);
 
   const handleScale = async () => {
     try {
@@ -166,7 +170,7 @@ const DeploymentDetailPage: React.FC = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Loading deployment details...</p>
@@ -179,7 +183,7 @@ const DeploymentDetailPage: React.FC = () => {
   if (error) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
           <div className="text-center">
             <ExclamationTriangleIcon className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Deployment</h2>
@@ -199,7 +203,7 @@ const DeploymentDetailPage: React.FC = () => {
   if (!deployment) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
           <div className="text-center">
             <CubeIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Deployment Not Found</h2>
@@ -221,7 +225,7 @@ const DeploymentDetailPage: React.FC = () => {
       onClick={() => setActiveTab(tabName)}
       className={`flex items-center px-6 py-3 text-sm font-medium rounded-xl transition-all ${
         activeTab === tabName 
-          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg' 
+          ? 'bg-linear-to-r from-blue-600 to-purple-600 text-white shadow-lg' 
           : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
       }`}
     >
@@ -232,7 +236,7 @@ const DeploymentDetailPage: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50">
         <div className="p-8">
           {/* Toast Notification */}
           {toast.show && (
@@ -480,7 +484,7 @@ const DeploymentDetailPage: React.FC = () => {
                         <button 
                           onClick={handleScale} 
                           disabled={isScaling || scaleReplicas === deployment.replicas}
-                          className="flex items-center px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 transition-all font-medium shadow-lg hover:shadow-xl"
+                          className="flex items-center px-6 py-3 bg-linear-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 transition-all font-medium shadow-lg hover:shadow-xl"
                         >
                           {isScaling ? (
                             <>
@@ -530,43 +534,7 @@ const DeploymentDetailPage: React.FC = () => {
             )}
 
             {activeTab === 'logs' && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-                <div className="px-8 py-6 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mr-4">
-                        <ClipboardDocumentListIcon className="h-6 w-6 text-gray-600" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-900">Application Logs</h2>
-                        <p className="text-gray-600">Real-time logs from your deployment</p>
-                      </div>
-                    </div>
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all">
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-                <div className="bg-gray-900 text-white font-mono text-sm p-6 h-96 overflow-y-auto">
-                  {logs.length > 0 ? (
-                    logs.map((log, index) => (
-                      <div key={index} className="flex space-x-4 py-1 hover:bg-gray-800 px-2 rounded">
-                        <span className="text-gray-500 flex-shrink-0">
-                          {new Date(log.timestamp).toLocaleTimeString()}
-                        </span>
-                        <span className="text-green-400">│</span>
-                        <span className="flex-1">{log.message}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8">
-                      <ClipboardDocumentListIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
-                      <p className="text-gray-500">No logs available at the moment.</p>
-                      <p className="text-gray-600 text-sm mt-2">Logs will appear here once your application starts generating them.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <LogsPage />
             )}
 
             {activeTab === 'domains' && (

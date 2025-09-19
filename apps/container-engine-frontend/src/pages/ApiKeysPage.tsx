@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import api from '../lib/api';
+import api from '../api/api';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 import {
   PlusIcon,
@@ -61,7 +61,7 @@ const CreateKeyModal: React.FC<CreateKeyModalProps> = ({ isOpen, onClose, onSucc
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all">
         <div className="p-8">
           <div className="flex items-center mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center mr-4">
+            <div className="w-12 h-12 bg-linear-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center mr-4">
               <KeyIcon className="h-6 w-6 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900">Create New API Key</h2>
@@ -115,7 +115,7 @@ const CreateKeyModal: React.FC<CreateKeyModalProps> = ({ isOpen, onClose, onSucc
               <button
                 type="submit"
                 disabled={isCreating}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-400 transition-all font-medium shadow-lg"
+                className="px-6 py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-400 transition-all font-medium shadow-lg"
               >
                 {isCreating ? (
                   <div className="flex items-center">
@@ -161,13 +161,13 @@ const ShowKeyModal: React.FC<ShowKeyModalProps> = ({ isOpen, onClose, apiKey }) 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all">
         <div className="p-8">
           <div className="flex items-center mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mr-4">
+            <div className="w-12 h-12 bg-linear-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mr-4">
               <ShieldCheckIcon className="h-6 w-6 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900">API Key Created Successfully!</h2>
           </div>
 
-          <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 mb-6">
+          <div className="bg-linear-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 mb-6">
             <div className="flex">
               <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
               <div>
@@ -208,7 +208,7 @@ const ShowKeyModal: React.FC<ShowKeyModalProps> = ({ isOpen, onClose, apiKey }) 
           <div className="flex justify-end">
             <button
               onClick={onClose}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium shadow-lg"
+              className="px-6 py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium shadow-lg"
             >
               Got it, Close
             </button>
@@ -377,7 +377,7 @@ const ApiKeysPage: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50">
         <div className="p-8">
           {/* Header Section */}
           <div className="mb-8">
@@ -388,7 +388,7 @@ const ApiKeysPage: React.FC = () => {
               </div>
               <button
                 onClick={() => setModalState('creating')}
-                className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-medium"
+                className="inline-flex items-center px-6 py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-medium"
               >
                 <PlusIcon className="h-5 w-5 mr-2" />
                 Create API Key
@@ -500,7 +500,7 @@ const ApiKeysPage: React.FC = () => {
                     <p className="text-gray-600 mb-6">Get started by creating your first API key.</p>
                     <button
                       onClick={() => setModalState('creating')}
-                      className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium"
+                      className="inline-flex items-center px-6 py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all font-medium"
                     >
                       <PlusIcon className="h-5 w-5 mr-2" />
                       Create Your First API Key
@@ -529,7 +529,7 @@ const ApiKeysPage: React.FC = () => {
                             <tr key={key.id} className="hover:bg-gray-50 transition-colors">
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
-                                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
+                                  <div className="w-8 h-8 bg-linear-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
                                     <KeyIcon className="h-4 w-4 text-white" />
                                   </div>
                                   <span className="text-sm font-semibold text-gray-900">{key.name}</span>

@@ -127,7 +127,7 @@ pub async fn login(
 
     // Verify password
     if !verify(&payload.password, &user.password_hash)? {
-        return Err(AppError::auth("Invalid credentials"));
+        return Err(AppError::auth("Invalid password"));
     }
 
     // Update last login

@@ -1,6 +1,6 @@
 // src/pages/DeploymentsPage.tsx
 import React, { useEffect, useState } from 'react';
-import api from '../lib/api';
+import api from '../api/api';
 import DashboardLayout from '../components/Layout/DashboardLayout';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow, parseISO } from 'date-fns';
@@ -109,12 +109,12 @@ const DeploymentsPage: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="p-6 md:p-10 bg-gray-50 min-h-screen">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
-          <h1 className="text-4xl font-extrabold text-gray-900 mb-4 md:mb-0">Your Deployments</h1>
+      <div className="p-4 sm:p-6 lg:p-10 bg-gray-50 min-h-screen">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-gray-900 mb-4 sm:mb-0">Your Deployments</h1>
           <Link
             to="/deployments/new"
-            className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-200 ease-in-out"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-4 sm:px-6 py-3 border border-transparent text-sm sm:text-base font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-200 ease-in-out"
           >
             <svg className="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
               <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
@@ -124,9 +124,9 @@ const DeploymentsPage: React.FC = () => {
         </div>
 
         {loading && (
-          <div className="flex items-center justify-center py-10">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-            <p className="ml-4 text-lg text-gray-600">Loading deployments...</p>
+          <div className="flex flex-col sm:flex-row items-center justify-center py-10">
+            <div className="animate-spin rounded-full h-8 w-8 sm:h-12 sm:w-12 border-b-2 border-indigo-600"></div>
+            <p className="mt-4 sm:mt-0 sm:ml-4 text-base sm:text-lg text-gray-600">Loading deployments...</p>
           </div>
         )}
         {error && (
@@ -148,128 +148,203 @@ const DeploymentsPage: React.FC = () => {
         )}
 
         {!loading && deployments.length === 0 && !error && (
-          <div className="bg-white shadow-lg rounded-lg p-8 text-center">
-            <p className="text-xl text-gray-700 mb-4">No deployments found.</p>
-            <p className="text-gray-500 mb-6">It looks like you haven't deployed anything yet. Get started by creating your first deployment!</p>
+          <div className="bg-white shadow-lg rounded-lg p-6 sm:p-8 text-center">
+            <p className="text-lg sm:text-xl text-gray-700 mb-4">No deployments found.</p>
+            <p className="text-sm sm:text-base text-gray-500 mb-6">It looks like you haven't deployed anything yet. Get started by creating your first deployment!</p>
             <Link
               to="/deployments/new"
-              className="inline-flex items-center px-5 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              className="inline-flex items-center px-4 sm:px-5 py-2 border border-transparent text-sm sm:text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
               Create New Deployment
             </Link>
-             
           </div>
         )}
 
         {deployments.length > 0 && (
-          <div className="bg-white shadow-xl rounded-lg overflow-hidden ring-1 ring-black ring-opacity-5">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    App Name
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Image
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    URL
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Replicas
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Updated
-                  </th>
-                  <th scope="col" className="relative px-6 py-3">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {deployments.map((deployment) => (
-                  <tr key={deployment.id} className="hover:bg-gray-50 transition duration-150 ease-in-out">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      <Link to={`/deployments/${deployment.id}`} className="text-indigo-600 hover:text-indigo-900 font-semibold">
-                        {deployment.app_name}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{deployment.image}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClasses(deployment.status)}`}
-                      >
-                        {deployment.status.charAt(0).toUpperCase() + deployment.status.slice(1)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      <a href={deployment.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 truncate max-w-xs block" title={deployment.url}>
+          <>
+            {/* Mobile Card View */}
+            <div className="block lg:hidden space-y-4">
+              {deployments.map((deployment) => (
+                <div key={deployment.id} className="bg-white shadow-lg rounded-lg p-4 border border-gray-200">
+                  <div className="flex justify-between items-start mb-3">
+                    <Link to={`/deployments/${deployment.id}`} className="text-lg font-semibold text-indigo-600 hover:text-indigo-900">
+                      {deployment.app_name}
+                    </Link>
+                    <span
+                      className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusClasses(deployment.status)}`}
+                    >
+                      {deployment.status.charAt(0).toUpperCase() + deployment.status.slice(1)}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-2 mb-4">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Image:</span>
+                      <span className="text-gray-900 truncate ml-2">{deployment.image}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">URL:</span>
+                      <a href={deployment.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 truncate ml-2" title={deployment.url}>
                         {getDomainFromUrl(deployment.url)}
                       </a>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{deployment.replicas}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {formatDistanceToNow(parseISO(deployment.updated_at), { addSuffix: true })}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex items-center justify-end space-x-3">
-                        {deployment.status === 'running' && (
-                          <button
-                            onClick={() => handleStopDeployment(deployment.id)}
-                            className="text-yellow-600 hover:text-yellow-800 transition duration-150 ease-in-out"
-                            title="Stop Deployment"
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Replicas:</span>
+                      <span className="text-gray-900">{deployment.replicas}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-500">Updated:</span>
+                      <span className="text-gray-900">{formatDistanceToNow(parseISO(deployment.updated_at), { addSuffix: true })}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {deployment.status === 'running' && (
+                      <button
+                        onClick={() => handleStopDeployment(deployment.id)}
+                        className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium text-yellow-700 bg-yellow-100 hover:bg-yellow-200 rounded-md transition duration-150"
+                      >
+                        Stop
+                      </button>
+                    )}
+                    {(deployment.status === 'stopped' || deployment.status === 'failed') && (
+                      <button
+                        onClick={() => handleStartDeployment(deployment.id)}
+                        className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-md transition duration-150"
+                      >
+                        Start
+                      </button>
+                    )}
+                    <Link 
+                      to={`/deployments/${deployment.id}`} 
+                      className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition duration-150 text-center"
+                    >
+                      View Details
+                    </Link>
+                    <button
+                      onClick={() => handleDeleteDeployment(deployment.id)}
+                      className="flex-1 sm:flex-none px-3 py-2 text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 rounded-md transition duration-150"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden lg:block bg-white shadow-xl rounded-lg overflow-hidden ring-1 ring-black ring-opacity-5">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        App Name
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Image
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        URL
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Replicas
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Last Updated
+                      </th>
+                      <th scope="col" className="relative px-6 py-3">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {deployments.map((deployment) => (
+                      <tr key={deployment.id} className="hover:bg-gray-50 transition duration-150 ease-in-out">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          <Link to={`/deployments/${deployment.id}`} className="text-indigo-600 hover:text-indigo-900 font-semibold">
+                            {deployment.app_name}
+                          </Link>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{deployment.image}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClasses(deployment.status)}`}
                           >
-                            Stop
-                          </button>
-                        )}
-                        {(deployment.status === 'stopped' || deployment.status === 'failed') && (
-                          <button
-                            onClick={() => handleStartDeployment(deployment.id)}
-                            className="text-green-600 hover:text-green-800 transition duration-150 ease-in-out"
-                            title="Start Deployment"
-                          >
-                            Start
-                          </button>
-                        )}
-                        <Link to={`/deployments/${deployment.id}`} className="text-blue-600 hover:text-blue-800 transition duration-150 ease-in-out" title="View Details">
-                          View
-                        </Link>
-                        <button
-                          onClick={() => handleDeleteDeployment(deployment.id)}
-                          className="text-red-600 hover:text-red-800 transition duration-150 ease-in-out"
-                          title="Delete Deployment"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                            {deployment.status.charAt(0).toUpperCase() + deployment.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <a href={deployment.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-900 truncate max-w-xs block" title={deployment.url}>
+                            {getDomainFromUrl(deployment.url)}
+                          </a>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{deployment.replicas}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {formatDistanceToNow(parseISO(deployment.updated_at), { addSuffix: true })}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex items-center justify-end space-x-3">
+                            {deployment.status === 'running' && (
+                              <button
+                                onClick={() => handleStopDeployment(deployment.id)}
+                                className="text-yellow-600 hover:text-yellow-800 transition duration-150 ease-in-out"
+                                title="Stop Deployment"
+                              >
+                                Stop
+                              </button>
+                            )}
+                            {(deployment.status === 'stopped' || deployment.status === 'failed') && (
+                              <button
+                                onClick={() => handleStartDeployment(deployment.id)}
+                                className="text-green-600 hover:text-green-800 transition duration-150 ease-in-out"
+                                title="Start Deployment"
+                              >
+                                Start
+                              </button>
+                            )}
+                            <Link to={`/deployments/${deployment.id}`} className="text-blue-600 hover:text-blue-800 transition duration-150 ease-in-out" title="View Details">
+                              View
+                            </Link>
+                            <button
+                              onClick={() => handleDeleteDeployment(deployment.id)}
+                              className="text-red-600 hover:text-red-800 transition duration-150 ease-in-out"
+                              title="Delete Deployment"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         )}
 
         {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div className="flex justify-center mt-10">
+          <div className="flex justify-center mt-6 sm:mt-10">
             <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="relative inline-flex items-center px-4 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="relative inline-flex items-center px-2 sm:px-4 py-2 rounded-l-md border border-gray-300 bg-white text-xs sm:text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Previous
+                <span className="sr-only sm:not-sr-only">Previous</span>
+                <span className="sm:hidden">‹</span>
               </button>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                 <button
                   key={page}
                   onClick={() => setCurrentPage(page)}
                   aria-current={currentPage === page ? 'page' : undefined}
-                  className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium ${
+                  className={`relative inline-flex items-center px-2 sm:px-4 py-2 border border-gray-300 text-xs sm:text-sm font-medium ${
                     currentPage === page ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-white text-gray-700 hover:bg-gray-50'
                   }`}
                 >
@@ -279,9 +354,10 @@ const DeploymentsPage: React.FC = () => {
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="relative inline-flex items-center px-4 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="relative inline-flex items-center px-2 sm:px-4 py-2 rounded-r-md border border-gray-300 bg-white text-xs sm:text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Next
+                <span className="sr-only sm:not-sr-only">Next</span>
+                <span className="sm:hidden">›</span>
               </button>
             </nav>
           </div>

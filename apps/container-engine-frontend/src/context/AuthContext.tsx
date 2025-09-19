@@ -30,7 +30,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Hàm helper để chuyển đổi expires_at
+  // Helper function to convert expires_at
   const parseExpiresAt = (expiresAt: string | number): number => {
     if (typeof expiresAt === 'string') {
       return new Date(expiresAt).getTime();
@@ -53,11 +53,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setExpiresAt(expiresAtNumber);
       setUser(userData);
       
-      // Kiểm tra token có hết hạn không
+      // Check if token is expired
       if (expiresAtNumber > Date.now()) {
         setIsAuthenticated(true);
       } else {
-        // Token đã hết hạn, xóa dữ liệu
+        // Token has expired, clear data
         logout();
       }
     }

@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
-// Icons (bạn có thể thay thế bằng react-icons hoặc lucide-react)
 const DashboardIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
@@ -87,7 +86,7 @@ const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, o
       {/* Sidebar */}
       <div className={`
         fixed lg:static inset-y-0 left-0 z-50 w-64 
-        bg-gradient-to-b from-slate-900 to-slate-800
+        bg-linear-to-b from-slate-900 to-slate-800
         transform ${isOpen ? 'translate-x-0' : '-translate-x-full'} 
         lg:translate-x-0 transition-transform duration-300 ease-in-out
         shadow-2xl lg:shadow-none
@@ -100,7 +99,7 @@ const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, o
               className="flex items-center space-x-3 group"
               onClick={() => window.innerWidth < 1024 && onClose()}
             >
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center transform group-hover:scale-110 transition-transform duration-200">
+              <div className="w-10 h-10 bg-linear-to-r from-blue-500 to-purple-600 rounded-xl flex items-center justify-center transform group-hover:scale-110 transition-transform duration-200">
                 <span className="text-white font-bold text-lg">CE</span>
               </div>
               <div>
@@ -126,7 +125,7 @@ const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, o
                   className={`
                     flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200
                     ${active 
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg transform scale-[1.02]' 
+                      ? 'bg-linear-to-r from-blue-500 to-purple-600 text-white shadow-lg transform scale-[1.02]' 
                       : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
                     }
                     group
@@ -143,7 +142,7 @@ const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, o
           </nav>
 
           {/* Status Card */}
-          <div className="mx-4 mb-4 p-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl">
+          <div className="mx-4 mb-4 p-4 bg-linear-to-r from-green-500/10 to-emerald-500/10 border border-green-500/20 rounded-xl">
             <div className="flex items-center space-x-2 mb-2">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
               <span className="text-sm font-medium text-green-400">System Status</span>
@@ -177,7 +176,7 @@ const Header: React.FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
       <div className="px-4 sm:px-6 py-4">
         <div className="flex justify-between items-center">
           {/* Left side */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             <button
               onClick={onMenuClick}
               className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition-colors"
@@ -185,11 +184,11 @@ const Header: React.FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
               <MenuIcon />
             </button>
             
-            <div>
-              <h1 className="text-xl font-bold text-slate-800">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-lg lg:text-xl font-bold text-slate-800 truncate">
                 Welcome back, {user?.username || 'User'}! 👋
               </h1>
-              <p className="text-sm text-slate-500">
+              <p className="text-xs sm:text-sm text-slate-500 hidden sm:block">
                 {new Date().toLocaleDateString('vi-VN', { 
                   weekday: 'long', 
                   year: 'numeric', 
@@ -201,13 +200,13 @@ const Header: React.FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
           </div>
 
           {/* Right side */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             {/* Search */}
             <div className="hidden md:block relative">
               <input
                 type="text"
                 placeholder="Search..."
-                className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                className="pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all text-sm"
               />
               <svg className="w-4 h-4 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -221,13 +220,13 @@ const Header: React.FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
                 className="relative p-2 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <BellIcon />
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
                   3
                 </span>
               </button>
               
               {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-50">
+                <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-xl shadow-lg border border-slate-200 py-2 z-50">
                   <div className="px-4 py-2 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800">Notifications</h3>
                   </div>
@@ -247,9 +246,9 @@ const Header: React.FC<{ onMenuClick: () => void }> = ({ onMenuClick }) => {
             <div className="relative">
               <button
                 onClick={() => setShowProfile(!showProfile)}
-                className="flex items-center space-x-2 p-2 rounded-lg hover:bg-slate-100 transition-colors"
+                className="flex items-center space-x-1 sm:space-x-2 p-2 rounded-lg hover:bg-slate-100 transition-colors"
               >
-                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                <div className="w-8 h-8 bg-linear-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
                   <span className="text-white font-medium text-sm">
                     {user?.username?.charAt(0).toUpperCase() || 'U'}
                   </span>
@@ -285,14 +284,14 @@ const DashboardLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="flex min-h-screen bg-linear-to-br from-slate-50 to-slate-100">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       
       <div className="flex-1 flex flex-col lg:ml-0">
         <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
         
         <main className="flex-1 overflow-auto">
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             {children}
           </div>
         </main>
