@@ -630,6 +630,11 @@ start_minikube() {
             su - $REAL_USER -c "minikube start --driver=docker"
             log_success "Minikube started successfully!"
         fi
+        
+        # Enable ingress addon
+        log_info "Enabling ingress addon..."
+        su - $REAL_USER -c "minikube addons enable ingress"
+        log_success "Ingress addon enabled!"
     else
         # Check if minikube is already running
         if minikube status >/dev/null 2>&1; then
@@ -656,10 +661,41 @@ start_minikube() {
                 fi
             done
         fi
+        
+        # Enable ingress addon
+        log_info "Enabling ingress addon..."
+        minikube addons enable ingress
+        log_success "Ingress addon enabled!"
     fi
+    
+    # Wait for ingress to be ready
+    wait_for_ingress
 
     # Show status
     k8s_status
+}
+wait_for_ingress() {
+    log_info "Waiting for Ingress controller to be ready..."
+    
+    local max_attempts=24  # 2 minutes (5 seconds x 24)
+    local attempt=0
+    
+    while [ $attempt -lt $max_attempts ]; do
+        if kubectl get pods -n ingress-nginx 2>/dev/null | grep -q "Running"; then
+            log_success "Ingress controller is ready!"
+            return 0
+        fi
+        
+        attempt=$((attempt + 1))
+        sleep 5
+        
+        if [ $((attempt % 6)) -eq 0 ]; then
+            log_info "Still waiting for Ingress... ($((attempt * 5))/120 seconds)"
+        fi
+    done
+    
+    log_warning "Ingress controller not ready after 2 minutes, but continuing..."
+    return 0
 }
 
 # Stop minikube

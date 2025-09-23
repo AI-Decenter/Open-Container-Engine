@@ -1,5 +1,4 @@
 use axum::{
-    http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
@@ -14,8 +13,6 @@ use tower_http::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
-
 mod auth;
 mod config;
 mod database;
@@ -23,16 +20,16 @@ mod deployment;
 mod error;
 mod handlers;
 mod jobs;
+mod notifications;
 mod services;
 mod user;
 
 use crate::jobs::{deployment_job::DeploymentJob, deployment_worker::DeploymentWorker};
-use crate::services::kubernetes::KubernetesService;
+use crate::notifications::NotificationManager;
 use config::Config;
 use database::Database;
 use error::AppError;
 use tokio::sync::mpsc;
-
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -93,20 +90,18 @@ pub struct AppState {
     pub redis: redis::Client,
     pub config: Config,
     pub deployment_sender: mpsc::Sender<DeploymentJob>,
+    pub notification_manager: NotificationManager,
 }
-// Setup function trong main.rs
+// Setup function in main.rs
 pub async fn setup_deployment_system(
     db_pool: sqlx::PgPool,
-    k8s_namespace: Option<String>,
-) -> Result<(KubernetesService, mpsc::Sender<DeploymentJob>), Box<dyn std::error::Error>> {
-    // Initialize Kubernetes service
-    let k8s_service = KubernetesService::new(k8s_namespace).await?;
-
+    notification_manager: NotificationManager,
+) -> Result<mpsc::Sender<DeploymentJob>, Box<dyn std::error::Error>> {
     // Create channel for deployment jobs
     let (deployment_sender, deployment_receiver) = mpsc::channel::<DeploymentJob>(100);
 
     // Start deployment worker
-    let worker = DeploymentWorker::new(deployment_receiver, k8s_service.clone(), db_pool);
+    let worker = DeploymentWorker::new(deployment_receiver, db_pool, notification_manager);
 
     tokio::spawn(async move {
         worker.start().await;
@@ -114,11 +109,11 @@ pub async fn setup_deployment_system(
 
     tracing::info!("Deployment system initialized successfully");
 
-    Ok((k8s_service, deployment_sender))
+    Ok(deployment_sender)
 }
 async fn open_browser_on_startup(port: u16) {
     tokio::spawn(async move {
-        // Đợi server khởi động
+        // Waiting server started
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
         let url = format!("http://localhost:{}", port);
@@ -170,15 +165,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .query_async::<_, String>(&mut redis_conn)
         .await?;
     tracing::info!("Redis connection established");
+    // Setup notification manager
+    let notification_manager = NotificationManager::new();
+
     // Setup deployment system
-    let (_k8s_service, deployment_sender) =
-        setup_deployment_system(db.pool.clone(), config.kubernetes_namespace.clone()).await?;
+    let deployment_sender = setup_deployment_system(db.pool.clone(), notification_manager.clone()).await?;
+
     // Create app state
     let state = AppState {
         db,
         redis: redis_client,
         config: config.clone(),
         deployment_sender,
+        notification_manager,
     };
 
     // Build our application with routes
@@ -189,9 +188,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Server listening on {}", addr);
     // Automatically open browser in development mode
     let is_dev = std::env::var("ENVIRONMENT").unwrap_or_default() != "production";
-    let auto_open = std::env::var("AUTO_OPEN_BROWSER")
-        .unwrap_or_else(|_| "true".to_string()) == "true";
-    
+    let auto_open =
+        std::env::var("AUTO_OPEN_BROWSER").unwrap_or_else(|_| "true".to_string()) == "true";
+
     if is_dev && auto_open {
         open_browser_on_startup(config.port).await;
     }
@@ -215,14 +214,14 @@ fn create_app(state: AppState) -> Router {
         println!("   npm install && npm run build\n");
     } else {
         tracing::info!("Serving frontend from: {}", frontend_path);
-        
-        // Kiểm tra file index.html
+
+        // Check index.html file
         let index_exists = std::path::Path::new(&format!("{}/index.html", frontend_path)).exists();
         if !index_exists {
             tracing::warn!("index.html not found in frontend directory");
         }
     }
-    
+
     let index_path = format!("{}/index.html", frontend_path);
     let serve_dir = ServeDir::new(&frontend_path).not_found_service(ServeFile::new(&index_path));
     Router::new()
@@ -289,10 +288,7 @@ fn create_app(state: AppState) -> Router {
             "/v1/deployments/:deployment_id/stop",
             post(handlers::deployment::stop_deployment),
         )
-        .route(
-            "/v1/deployments/:deployment_id/logs",
-            get(handlers::deployment::get_logs),
-        )
+        
         .route(
             "/v1/deployments/:deployment_id/metrics",
             get(handlers::deployment::get_metrics),
@@ -313,6 +309,32 @@ fn create_app(state: AppState) -> Router {
         .route(
             "/v1/deployments/:deployment_id/domains/:domain_id",
             axum::routing::delete(handlers::deployment::remove_domain),
+        )
+        .route(
+            "/v1/deployments/:deployment_id/logs/stream",
+            get(handlers::logs::ws_logs_handler),
+        )
+        .route(
+            "/v1/deployments/:deployment_id/logs",
+            get(handlers::logs::get_logs_handler),
+        )
+        // WebSocket notifications
+        .route(
+            "/v1/ws/notifications",
+            get(notifications::websocket::websocket_handler),
+        )
+        .route(
+            "/v1/ws/health",
+            get(notifications::websocket::websocket_health),
+        )
+        // Notification testing endpoints
+        .route(
+            "/v1/notifications/test",
+            get(handlers::notifications::send_test_notification),
+        )
+        .route(
+            "/v1/notifications/stats",
+            get(handlers::notifications::get_notification_stats),
         )
         // Serve static files
         .fallback_service(serve_dir)

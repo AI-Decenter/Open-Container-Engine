@@ -1,8 +1,11 @@
 // src/pages/DeploymentDetailPage.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import api from '../api/api';
 import DashboardLayout from '../components/Layout/DashboardLayout';
+import LogsPage from '../components/DeploymentDetail/LogsPage';
+import { useNotifications } from '../context/NotificationContext';
+import type { WebSocketMessage } from '../services/websocket';
 import {
   RocketLaunchIcon,
   CubeIcon,
@@ -21,7 +24,6 @@ import {
   LinkIcon,
   EyeIcon,
   TrashIcon,
-  PencilIcon,
   CloudIcon,
   ChartBarIcon,
   PlusIcon
@@ -56,9 +58,12 @@ interface DeploymentLogs {
 
 const DeploymentDetailPage: React.FC = () => {
   const { deploymentId } = useParams<{ deploymentId: string }>();
+  
   const navigate = useNavigate();
   const [deployment, setDeployment] = useState<DeploymentDetails | null>(null);
-  const [logs, setLogs] = useState<DeploymentLogs[]>([]);
+  const [ logs,setLogs] = useState<DeploymentLogs[]>([]);
+  console.log(logs);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'logs' | 'domains' | 'settings'>('overview');
@@ -67,10 +72,11 @@ const DeploymentDetailPage: React.FC = () => {
     message: '',
     type: 'success'
   });
-  
+
   // State for scaling
   const [scaleReplicas, setScaleReplicas] = useState(1);
   const [isScaling, setIsScaling] = useState(false);
+  const { addNotificationHandler } = useNotifications();
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ show: true, message, type });
@@ -88,29 +94,86 @@ const DeploymentDetailPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!deploymentId) return;
 
-    const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [detailsRes, logsRes] = await Promise.all([
+        api.get(`/v1/deployments/${deploymentId}`),
+        api.get(`/v1/deployments/${deploymentId}/logs`, { params: { tail: 100 } })
+      ]);
+      setDeployment(detailsRes.data);
+      setScaleReplicas(detailsRes.data.replicas);
+      setLogs(logsRes.data.logs || []);
+      setError(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || 'Failed to fetch deployment details.');
+    } finally {
+      setLoading(false);
+    }
+  }, [deploymentId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Subscribe to WebSocket notifications for this specific deployment
+  useEffect(() => {
+    const handleNotification = (message: WebSocketMessage) => {
+      console.log("Received WebSocket message:", message);
+      
+      // Parse the notification data
+      let isForCurrentDeployment = false;
+      let notificationData: any = null;
+      
       try {
-        setLoading(true);
-        const [detailsRes, logsRes] = await Promise.all([
-          api.get(`/v1/deployments/${deploymentId}`),
-          api.get(`/v1/deployments/${deploymentId}/logs`, { params: { tail: 100 } })
-        ]);
-        setDeployment(detailsRes.data);
-        setScaleReplicas(detailsRes.data.replicas);
-        setLogs(logsRes.data.logs || []);
-        setError(null);
-      } catch (err: any) {
-        setError(err.response?.data?.error?.message || 'Failed to fetch deployment details.');
-      } finally {
-        setLoading(false);
+        // Backend sends nested data structure: message.data.data contains actual notification data
+        const messageType = message.type;
+        notificationData = message.data.data; // Access nested data
+        
+        console.log("Message type:", messageType);
+        console.log("Message data:", notificationData);
+        
+        // Check if this notification is for the current deployment
+        isForCurrentDeployment = 
+          (messageType === 'deployment_status_changed' && notificationData.deployment_id === deploymentId) ||
+          (messageType === 'deployment_scaled' && notificationData.deployment_id === deploymentId) ||
+          (messageType === 'deployment_created' && notificationData.deployment_id === deploymentId) ||
+          (messageType === 'deployment_deleted' && notificationData.deployment_id === deploymentId);
+
+        console.log("Is for current deployment:", isForCurrentDeployment);
+        console.log("Current deployment ID:", deploymentId);
+        console.log("Notification deployment ID:", notificationData.deployment_id);
+
+        if (isForCurrentDeployment) {
+          console.log("Notification is for current deployment, refreshing data...");
+          fetchData();
+
+          // Show toast notification
+          if (messageType === 'deployment_status_changed') {
+            showToast(`Deployment status changed to: ${notificationData.status}`, 'success');
+          } else if (messageType === 'deployment_scaled') {
+            showToast(`Deployment scaled from ${notificationData.old_replicas} to ${notificationData.new_replicas} replicas`, 'success');
+          } else if (messageType === 'deployment_created') {
+            showToast(`Deployment ${notificationData.app_name} created successfully`, 'success');
+          } else if (messageType === 'deployment_deleted') {
+            showToast(`Deployment ${notificationData.app_name} deleted`, 'error');
+            // Redirect to deployments page after deletion
+            setTimeout(() => navigate('/deployments'), 2000);
+          }
+        }
+      } catch (error) {
+        console.error("Error parsing notification:", error);
       }
     };
 
-    fetchData();
-  }, [deploymentId]);
+    const unsubscribe = addNotificationHandler(handleNotification);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [deploymentId, addNotificationHandler, fetchData, navigate]);
 
   const handleScale = async () => {
     try {
@@ -125,6 +188,22 @@ const DeploymentDetailPage: React.FC = () => {
       showToast(err.response?.data?.error?.message || 'Failed to scale deployment.', 'error');
     } finally {
       setIsScaling(false);
+    }
+  };
+
+  const handleDeleteDeployment = async () => {
+    if (!window.confirm('Are you sure you want to delete this deployment? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      await api.delete(`/v1/deployments/${deploymentId}`);
+      showToast('Deployment deleted successfully!', 'success');
+      // Redirect to deployments page after deletion
+      setTimeout(() => {
+        navigate('/deployments');
+      }, 1500);
+    } catch (err: any) {
+      showToast(err.response?.data?.error?.message || 'Failed to delete deployment.', 'error');
     }
   };
 
@@ -166,7 +245,7 @@ const DeploymentDetailPage: React.FC = () => {
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Loading deployment details...</p>
@@ -179,7 +258,7 @@ const DeploymentDetailPage: React.FC = () => {
   if (error) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
           <div className="text-center">
             <ExclamationTriangleIcon className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Error Loading Deployment</h2>
@@ -199,7 +278,7 @@ const DeploymentDetailPage: React.FC = () => {
   if (!deployment) {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
           <div className="text-center">
             <CubeIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Deployment Not Found</h2>
@@ -219,11 +298,10 @@ const DeploymentDetailPage: React.FC = () => {
   const TabButton: React.FC<{ tabName: typeof activeTab; label: string; icon: React.ReactNode }> = ({ tabName, label, icon }) => (
     <button
       onClick={() => setActiveTab(tabName)}
-      className={`flex items-center px-6 py-3 text-sm font-medium rounded-xl transition-all ${
-        activeTab === tabName 
-          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg' 
-          : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-      }`}
+      className={`flex items-center px-6 py-3 text-sm font-medium rounded-xl transition-all ${activeTab === tabName
+        ? 'bg-linear-to-r from-blue-600 to-purple-600 text-white shadow-lg'
+        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+        }`}
     >
       {icon}
       <span className="ml-2">{label}</span>
@@ -232,15 +310,14 @@ const DeploymentDetailPage: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+      <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50">
         <div className="p-8">
           {/* Toast Notification */}
           {toast.show && (
-            <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded-xl shadow-lg border transition-all transform ${
-              toast.type === 'success' 
-                ? 'bg-green-50 border-green-200 text-green-800' 
-                : 'bg-red-50 border-red-200 text-red-800'
-            }`}>
+            <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded-xl shadow-lg border transition-all transform ${toast.type === 'success'
+              ? 'bg-green-50 border-green-200 text-green-800'
+              : 'bg-red-50 border-red-200 text-red-800'
+              }`}>
               {toast.type === 'success' ? (
                 <CheckCircleIcon className="h-5 w-5 mr-3" />
               ) : (
@@ -270,10 +347,10 @@ const DeploymentDetailPage: React.FC = () => {
                   </div>
                   <div className="flex items-center text-gray-600">
                     <LinkIcon className="h-4 w-4 mr-2" />
-                    <a 
-                      href={deployment.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
+                    <a
+                      href={deployment.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
                     >
                       {deployment.url}
@@ -292,11 +369,11 @@ const DeploymentDetailPage: React.FC = () => {
                   <EyeIcon className="h-5 w-5 mr-2" />
                   View Live
                 </button>
-                <button className="flex items-center px-4 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-xl transition-all">
-                  <PencilIcon className="h-5 w-5 mr-2" />
-                  Edit
-                </button>
-                <button className="flex items-center px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xl transition-all">
+              
+                <button 
+                  onClick={handleDeleteDeployment}
+                  className="flex items-center px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xl transition-all"
+                >
                   <TrashIcon className="h-5 w-5 mr-2" />
                   Delete
                 </button>
@@ -357,24 +434,24 @@ const DeploymentDetailPage: React.FC = () => {
 
           {/* Navigation Tabs */}
           <div className="flex space-x-4 mb-8 bg-white rounded-2xl p-4 shadow-lg border border-gray-100">
-            <TabButton 
-              tabName="overview" 
-              label="Overview" 
+            <TabButton
+              tabName="overview"
+              label="Overview"
               icon={<ChartBarIcon className="h-5 w-5" />}
             />
-            <TabButton 
-              tabName="logs" 
-              label="Logs" 
+            <TabButton
+              tabName="logs"
+              label="Logs"
               icon={<ClipboardDocumentListIcon className="h-5 w-5" />}
             />
-            <TabButton 
-              tabName="domains" 
-              label="Domains" 
+            <TabButton
+              tabName="domains"
+              label="Domains"
               icon={<GlobeAltIcon className="h-5 w-5" />}
             />
-            <TabButton 
-              tabName="settings" 
-              label="Settings" 
+            <TabButton
+              tabName="settings"
+              label="Settings"
               icon={<Cog6ToothIcon className="h-5 w-5" />}
             />
           </div>
@@ -394,7 +471,7 @@ const DeploymentDetailPage: React.FC = () => {
                       <p className="text-gray-600">Core deployment details and metadata</p>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-4">
                     <div className="flex justify-between items-center py-3 border-b border-gray-100">
                       <span className="font-medium text-gray-700">Deployment ID:</span>
@@ -477,10 +554,10 @@ const DeploymentDetailPage: React.FC = () => {
                           onChange={(e) => setScaleReplicas(Number(e.target.value))}
                           className="w-24 px-4 py-3 border border-gray-300 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-center font-mono text-lg"
                         />
-                        <button 
-                          onClick={handleScale} 
+                        <button
+                          onClick={handleScale}
                           disabled={isScaling || scaleReplicas === deployment.replicas}
-                          className="flex items-center px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 transition-all font-medium shadow-lg hover:shadow-xl"
+                          className="flex items-center px-6 py-3 bg-linear-to-r from-green-600 to-blue-600 text-white rounded-xl hover:from-green-700 hover:to-blue-700 disabled:from-gray-400 disabled:to-gray-500 transition-all font-medium shadow-lg hover:shadow-xl"
                         >
                           {isScaling ? (
                             <>
@@ -530,43 +607,7 @@ const DeploymentDetailPage: React.FC = () => {
             )}
 
             {activeTab === 'logs' && (
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-                <div className="px-8 py-6 bg-gray-50 border-b border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mr-4">
-                        <ClipboardDocumentListIcon className="h-6 w-6 text-gray-600" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-900">Application Logs</h2>
-                        <p className="text-gray-600">Real-time logs from your deployment</p>
-                      </div>
-                    </div>
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all">
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-                <div className="bg-gray-900 text-white font-mono text-sm p-6 h-96 overflow-y-auto">
-                  {logs.length > 0 ? (
-                    logs.map((log, index) => (
-                      <div key={index} className="flex space-x-4 py-1 hover:bg-gray-800 px-2 rounded">
-                        <span className="text-gray-500 flex-shrink-0">
-                          {new Date(log.timestamp).toLocaleTimeString()}
-                        </span>
-                        <span className="text-green-400">│</span>
-                        <span className="flex-1">{log.message}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-8">
-                      <ClipboardDocumentListIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
-                      <p className="text-gray-500">No logs available at the moment.</p>
-                      <p className="text-gray-600 text-sm mt-2">Logs will appear here once your application starts generating them.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+              <LogsPage />
             )}
 
             {activeTab === 'domains' && (
@@ -580,7 +621,7 @@ const DeploymentDetailPage: React.FC = () => {
                     <p className="text-gray-600">Manage custom domains for your deployment</p>
                   </div>
                 </div>
-                
+
                 <div className="text-center py-12">
                   <GlobeAltIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-xl font-semibold text-gray-900 mb-2">Custom Domains Coming Soon</h3>

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  container-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: open-container-engine:test
+    container_name: container-engine
+    ports:
+      - "9001:8080"
+    volumes:
+      - ./k8sConfigTest.yaml:/app/k8sConfigTest.yaml:ro
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine
+      - REDIS_URL=redis://localhost:6379
+      - JWT_SECRET=my-super-secret-key
+      - DOMAIN_SUFFIX=localhost
+      - PORT=8080
+      - KUBECONFIG_PATH=./k8sConfigTest.yaml
+      - KUBERNETES_NAMESPACE=default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

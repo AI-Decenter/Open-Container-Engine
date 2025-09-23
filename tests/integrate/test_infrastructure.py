@@ -1,22 +1,28 @@
 """
-Simple validation test to check if the test infrastructure works
+Simple validation test to check if the test infrastructure is working correctly.
 """
 import pytest
 import requests
 import sys
 import os
+from unittest.mock import MagicMock
 
 # Add the project root to the Python path for standalone execution
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
-from tests.conftest import TestConfig, APIClient
+from tests.integrate.conftest import TestConfig, APIClient
 
 
 def test_config_values():
-    """Test that configuration values are set correctly"""
-    assert TestConfig.BASE_URL == "http://localhost:3001"
-    assert TestConfig.DB_NAME == "container_engine_test"
-    assert TestConfig.REDIS_URL == "redis://localhost:6379"
+    """Test that test configuration has correct values"""
+    assert TestConfig.BASE_URL == "http://localhost:3004"
+    assert TestConfig.DB_HOST == "localhost"
+    assert TestConfig.DB_PORT == 5432
+    assert TestConfig.DB_USER == "postgres"
+    assert TestConfig.DB_PASSWORD == "password"
+    assert TestConfig.DB_NAME == "container_engine"
+    assert TestConfig.REDIS_HOST == "localhost"
+    assert TestConfig.REDIS_PORT == 6379
 
 
 def test_api_client_creation():
@@ -50,30 +56,21 @@ def test_api_client_auth_methods():
 
 
 def test_request_url_construction():
-    """Test that request URLs are constructed correctly"""
-    client = APIClient()
+    """Test that API client constructs URLs correctly"""
+    base_url = "http://localhost:3004"
+    endpoint = "/test/endpoint"
+    session = MagicMock()
+    session.request.return_value = MagicMock()
     
-    # Mock the request method to check URL construction
-    original_request = client.session.request
-    captured_url = None
+    client = APIClient(base_url)
+    client.session = session
     
-    def mock_request(method, url, **kwargs):
-        nonlocal captured_url
-        captured_url = url
-        # Create a mock response
-        response = requests.Response()
-        response.status_code = 200
-        response._content = b'{"test": "response"}'
-        return response
+    client.get(endpoint)
     
-    client.session.request = mock_request
+    # Capture the URL that was called - session.request(method, url, **kwargs)
+    captured_url = session.request.call_args[0][1] if session.request.call_args else None
     
-    # Test URL construction
-    client.get("/test/endpoint")
-    assert captured_url == "http://localhost:3001/test/endpoint"
-    
-    # Restore original method
-    client.session.request = original_request
+    assert captured_url == "http://localhost:3004/test/endpoint"
 
 
 if __name__ == "__main__":

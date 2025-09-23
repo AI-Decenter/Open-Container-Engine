@@ -13,11 +13,18 @@ from dotenv import load_dotenv
 
 # Load environment-specific .env file for tests
 environment = os.getenv("ENVIRONMENT", "integrate_test")
-env_file = f".env.{environment}"
+
+# Determine which env file to load
+if os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true":
+    env_file = ".env.test"
+else:
+    env_file = f".env.{environment}"
 
 # Try to load environment-specific file, fallback to .env.test, then .env
 if os.path.exists(env_file):
     load_dotenv(env_file)
+elif os.path.exists(".env.test"):
+    load_dotenv(".env.test")
 elif os.path.exists("tests/.env.test"):
     load_dotenv("tests/.env.test")
 else:
@@ -27,7 +34,7 @@ class TestConfig:
     """Test configuration settings"""
     
     # Server settings
-    BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:3001")  # Use port 3001 for tests
+    BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:3000")
     HEALTH_ENDPOINT = "/health"
     
     # Database settings
@@ -35,12 +42,18 @@ class TestConfig:
     DB_PORT = int(os.getenv("TEST_DB_PORT", "5432"))
     DB_USER = os.getenv("TEST_DB_USER", "postgres")
     DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", "password")
-    DB_NAME = os.getenv("TEST_DB_NAME", "container_engine_test")
+    
+    # Use test database in CI, production database for local dev
+    if os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true":
+        DB_NAME = "container_engine_test"
+    else:
+        DB_NAME = "container_engine"  # Use same DB as running backend
+    
     DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     
     # Redis settings
-    REDIS_HOST = os.getenv("TEST_REDIS_HOST", "localhost")
-    REDIS_PORT = int(os.getenv("TEST_REDIS_PORT", "6379"))
+    REDIS_HOST = os.getenv("TEST_REDIS_HOST", os.getenv("REDIS_HOST", "localhost"))
+    REDIS_PORT = int(os.getenv("TEST_REDIS_PORT", os.getenv("REDIS_PORT", "6379")))
     REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
     
     # Test timeouts
@@ -73,18 +86,45 @@ class TestServerManager:
         """Start PostgreSQL and Redis using Docker"""
         print("Starting test dependencies...")
         
-        # Skip Docker container creation in GitHub Actions since services are provided
-        if self.is_github_actions:
-            print("Detected GitHub Actions environment - using provided services")
-            self._wait_for_dependencies()
-            return
+        # In GitHub Actions or if local services not available, start containers
+        if self.is_github_actions or not self._check_local_services():
+            print("Starting Docker containers for dependencies...")
+            self._start_containers()
+        else:
+            print("Using existing local services (PostgreSQL and Redis)...")
         
+        # Wait for dependencies to be ready
+        self._wait_for_dependencies()
+    
+    def _check_local_services(self):
+        """Check if local PostgreSQL and Redis are available"""
+        try:
+            # Check PostgreSQL
+            conn = psycopg2.connect(
+                host=TestConfig.DB_HOST,
+                port=TestConfig.DB_PORT,
+                user=TestConfig.DB_USER,
+                password=TestConfig.DB_PASSWORD,
+                database="container_engine"  # Check production DB for local dev
+            )
+            conn.close()
+            
+            # Check Redis
+            r = redis.Redis(host=TestConfig.REDIS_HOST, port=TestConfig.REDIS_PORT)
+            r.ping()
+            
+            return True
+        except (psycopg2.OperationalError, redis.ConnectionError):
+            return False
+    
+    def _start_containers(self):
+        """Start PostgreSQL and Redis containers"""
         # Start PostgreSQL
         try:
             postgres_container = self.docker_client.containers.run(
                 "postgres:16",
                 environment={
-                    "POSTGRES_DB": TestConfig.DB_NAME,
+                    "POSTGRES_DB": "container_engine_test",  # Use test DB in containers
                     "POSTGRES_USER": TestConfig.DB_USER,
                     "POSTGRES_PASSWORD": TestConfig.DB_PASSWORD,
                 },
@@ -98,6 +138,12 @@ class TestServerManager:
         except docker.errors.APIError as e:
             if "already in use" in str(e):
                 print("PostgreSQL container already running")
+                # Find and add existing container
+                try:
+                    existing_container = self.docker_client.containers.get("test_postgres")
+                    self.containers_started.append(existing_container)
+                except docker.errors.NotFound:
+                    pass
             else:
                 raise
         
@@ -115,15 +161,46 @@ class TestServerManager:
         except docker.errors.APIError as e:
             if "already in use" in str(e):
                 print("Redis container already running")
+                # Find and add existing container
+                try:
+                    existing_container = self.docker_client.containers.get("test_redis")
+                    self.containers_started.append(existing_container)
+                except docker.errors.NotFound:
+                    pass
             else:
                 raise
-        
-        # Wait for containers to be ready
-        self._wait_for_dependencies()
+    
+    def _check_local_dependencies(self) -> bool:
+        """Check if local dependencies are already running"""
+        try:
+            # Check PostgreSQL
+            conn = psycopg2.connect(
+                host=TestConfig.DB_HOST,
+                port=TestConfig.DB_PORT,
+                user=TestConfig.DB_USER,
+                password=TestConfig.DB_PASSWORD,
+                database=TestConfig.DB_NAME
+            )
+            conn.close()
+            
+            # Check Redis
+            r = redis.Redis(host=TestConfig.REDIS_HOST, port=TestConfig.REDIS_PORT)
+            r.ping()
+            
+            return True
+        except (psycopg2.OperationalError, redis.ConnectionError):
+            return False
     
     def _wait_for_dependencies(self):
         """Wait for PostgreSQL and Redis to be ready"""
         print("Waiting for dependencies to be ready...")
+        
+        # Determine which database to connect to
+        db_name = TestConfig.DB_NAME
+        if len(self.containers_started) > 0:  # If we started containers, use test database
+            db_name = "container_engine_test"
+        
+        print(f"Connecting to database: {db_name}")
         
         # Wait for PostgreSQL
         for i in range(30):
@@ -133,12 +210,13 @@ class TestServerManager:
                     port=TestConfig.DB_PORT,
                     user=TestConfig.DB_USER,
                     password=TestConfig.DB_PASSWORD,
-                    database=TestConfig.DB_NAME
+                    database=db_name
                 )
                 conn.close()
-                print("PostgreSQL is ready")
+                print(f"PostgreSQL is ready (database: {db_name})")
                 break
-            except psycopg2.OperationalError:
+            except psycopg2.OperationalError as e:
+                print(f"Waiting for PostgreSQL... (attempt {i+1}/30) - {e}")
                 time.sleep(1)
         else:
             raise Exception("PostgreSQL failed to start")
@@ -157,22 +235,44 @@ class TestServerManager:
     
     def start_server(self):
         """Start the Container Engine server"""
-        print("Starting Container Engine server...")
+        # First check if server is already running
+        if self.is_server_running():
+            print("Using existing Container Engine server...")
+            return
+        
+        print("Starting new Container Engine server...")
         
         # Set environment variables for the server
         env = os.environ.copy()
-        env.update({
-            "ENVIRONMENT": "integrate_test",  # This will load .env.integrate_test
-            "DATABASE_URL": TestConfig.DATABASE_URL,
-            "REDIS_URL": TestConfig.REDIS_URL,
-            "PORT": "3001",  # Use port 3001 to avoid conflicts
-            "JWT_SECRET": "test-jwt-secret-key",
-            "JWT_EXPIRES_IN": "3600",
-            "API_KEY_PREFIX": "ce_test_",
-            "KUBERNETES_NAMESPACE": "test",
-            "DOMAIN_SUFFIX": "test.local",
-            "RUST_LOG": "container_engine=info,tower_http=info"
-        })
+        
+        # Use appropriate config based on environment
+        if self.is_github_actions:
+            # GitHub Actions environment - use test database
+            env.update({
+                "ENVIRONMENT": "test",
+                "DATABASE_URL": "postgresql://postgres:password@localhost:5432/container_engine_test",
+                "REDIS_URL": TestConfig.REDIS_URL,
+                "PORT": "3000",
+                "JWT_SECRET": "test-jwt-secret-key",
+                "JWT_EXPIRES_IN": "3600",
+                "API_KEY_PREFIX": "ce_test_",
+                "KUBERNETES_NAMESPACE": "test",
+                "DOMAIN_SUFFIX": "test.local",
+                "RUST_LOG": "container_engine=info,tower_http=info"
+            })
+        else:
+            # Local development environment - use same config as running backend
+            env.update({
+                "DATABASE_URL": "postgresql://postgres:password@localhost:5432/container_engine",
+                "REDIS_URL": TestConfig.REDIS_URL,
+                "PORT": "3004",
+                "JWT_SECRET": "your-super-secret-jwt-key-change-this-in-production",
+                "JWT_EXPIRES_IN": "3600",
+                "API_KEY_PREFIX": "ce_dev_",
+                "KUBERNETES_NAMESPACE": "container-engine",
+                "DOMAIN_SUFFIX": "container-engine.app",
+                "RUST_LOG": "container_engine=info,tower_http=info"
+            })
         
         # Start the server
         self.server_process = subprocess.Popen(
@@ -206,12 +306,15 @@ class TestServerManager:
     
     def stop_server(self):
         """Stop the server and containers"""
-        print("Stopping test environment...")
+        print("Cleaning up test environment...")
         
+        # Only stop server if we started it
         if self.server_process:
             self.server_process.terminate()
             self.server_process.wait()
             print("Server stopped")
+        else:
+            print("Using external server - not stopping")
         
         # Only stop containers if we started them (not in GitHub Actions)
         if not self.is_github_actions:

@@ -55,17 +55,17 @@ print_status "Installing Python test dependencies..."
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 pip3 install -r "${SCRIPT_DIR}/requirements.txt"
 
-# Set test environment
-export DATABASE_URL="postgresql://postgres:password@localhost:5432/container_engine_test"
-export REDIS_URL="redis://localhost:6379"
-export JWT_SECRET="test-jwt-secret-key"
-export JWT_EXPIRES_IN="3600"
-export API_KEY_PREFIX="ce_test_"
-export KUBERNETES_NAMESPACE="test"
-export DOMAIN_SUFFIX="test.local"
-export RUST_LOG="container_engine=info,tower_http=info"
+# Set test environment - these should match your running backend or use defaults
+export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:password@localhost:5432/container_engine}"
+export REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+export JWT_SECRET="${JWT_SECRET:-your-super-secret-jwt-key-change-this-in-production}"
+export JWT_EXPIRES_IN="${JWT_EXPIRES_IN:-3600}"
+export API_KEY_PREFIX="${API_KEY_PREFIX:-ce_api_}"
+export KUBERNETES_NAMESPACE="${KUBERNETES_NAMESPACE:-container-engine}"
+export DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-container-engine.app}"
+export RUST_LOG="${RUST_LOG:-container_engine=info,tower_http=info}"
 
-print_status "Environment variables set for testing"
+print_status "Environment variables configured for testing"
 
 # Parse command line arguments
 PYTEST_ARGS=""

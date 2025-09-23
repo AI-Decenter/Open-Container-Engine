@@ -1,8 +1,9 @@
 // src/pages/AuthPage.tsx
 import React, { useState } from 'react';
-import api from '../lib/api';
+import api from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+
 const AuthPage: React.FC = () => {
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
@@ -27,28 +28,40 @@ const AuthPage: React.FC = () => {
       if (isRegister) {
         if (password !== confirm_password) {
           setError('Passwords do not match.');
-          setIsLoading(false);
           return;
         }
         await api.post('/v1/auth/register', { username, email, password, confirm_password });
         setSuccess('Registration successful! Please log in.');
         setIsRegister(false);
+        // Clear form fields after successful registration
+        setUsername('');
+        setEmail('');
+        setPassword('');
+        setconfirm_password('');
       } else {
-        const response: any = await api.post('/v1/auth/login', { email, password });
-        try {
-          login(
-            response?.data?.access_token,
-            response?.data.refresh_token,
-            response?.data?.expires_at,
-            response?.data.user
-          );
-        } catch (err) {
-          console.log('Login error:', err);
+        // Login process
+        const response = await api.post('/v1/auth/login', { email, password });
+
+        // Check if response has the required data
+        if (!response?.data?.access_token) {
+          throw new Error('Invalid response from server. Please try again.');
         }
+
+        // Attempt to login with the received data
+        login(
+          response.data.access_token,
+          response.data.refresh_token,
+          response.data.expires_at,
+          response.data.user
+        );
+
+        // Only navigate if login was successful
         navigate('/dashboard');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || 'An error occurred.');
+      // Handle different types of errors
+      setError(err.response?.data?.error?.message || err.message || 'An unexpected error occurred. Please try again.');
+      setIsLoading(false);
     } finally {
       setIsLoading(false);
     }
@@ -72,17 +85,34 @@ const AuthPage: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-100 via-white to-purple-100 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="bg-white backdrop-blur-sm p-8 rounded-3xl shadow-2xl border border-gray-100 relative overflow-hidden">
-          
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-indigo-100 via-white to-purple-100 py-8 sm:py-12 px-4 sm:px-6 lg:px-8">
+      {/* Back to Home Button */}
+      <button
+        onClick={() => navigate('/')}
+        className="fixed top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 bg-white/80 backdrop-blur-sm text-gray-700 rounded-full shadow-lg hover:shadow-xl hover:bg-white transition-all duration-300 group z-10"
+      >
+        <svg
+          className="w-4 h-4 sm:w-5 sm:h-5 transform group-hover:-translate-x-1 transition-transform duration-200"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        <span className="font-medium text-sm sm:text-base hidden sm:inline">Back to Home</span>
+        <span className="font-medium text-sm sm:hidden">Back</span>
+      </button>
+
+      <div className="max-w-md w-full space-y-6 sm:space-y-8">
+        <div className="bg-white backdrop-blur-sm p-6 sm:p-8 rounded-2xl sm:rounded-3xl shadow-2xl border border-gray-100 relative overflow-hidden">
+
           {/* Decorative top gradient */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
-          
+          <div className="absolute top-0 left-0 right-0 h-1 bg-linear-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+
           {/* Header */}
-          <div className="text-center mb-8">
-            <div className="mx-auto w-20 h-20 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mb-6 shadow-lg">
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="text-center mb-6 sm:mb-8">
+            <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-linear-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mb-4 sm:mb-6 shadow-lg">
+              <svg className="w-8 h-8 sm:w-10 sm:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {isRegister ? (
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 ) : (
@@ -90,15 +120,15 @@ const AuthPage: React.FC = () => {
                 )}
               </svg>
             </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
               {isRegister ? 'Create Account' : 'Welcome Back'}
             </h2>
-            <p className="text-gray-600">
+            <p className="text-gray-600 text-sm sm:text-base">
               {isRegister ? 'Join us and start your journey today' : 'Please sign in to your account'}
             </p>
           </div>
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-5 sm:space-y-6" onSubmit={handleSubmit}>
             {isRegister && (
               <div>
                 <label htmlFor="username" className="block text-sm font-semibold text-gray-700 mb-2">
@@ -111,7 +141,7 @@ const AuthPage: React.FC = () => {
                     type="text"
                     autoComplete="username"
                     required
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 text-sm sm:text-base"
                     placeholder="Enter your username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -136,7 +166,7 @@ const AuthPage: React.FC = () => {
                   type="email"
                   autoComplete="email"
                   required
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 text-sm sm:text-base"
                   placeholder="Enter your email address"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -160,7 +190,7 @@ const AuthPage: React.FC = () => {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 pr-12"
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 pr-12 text-sm sm:text-base"
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -186,7 +216,7 @@ const AuthPage: React.FC = () => {
                     name="confirm_password"
                     type={showConfirmPassword ? "text" : "password"}
                     required
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 pr-12"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 pr-12 text-sm sm:text-base"
                     placeholder="Confirm your password"
                     value={confirm_password}
                     onChange={(e) => setconfirm_password(e.target.value)}
@@ -223,7 +253,7 @@ const AuthPage: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95"
+              className="w-full bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95"
             >
               {isLoading ? (
                 <div className="flex items-center justify-center">
@@ -253,7 +283,7 @@ const AuthPage: React.FC = () => {
           </form>
 
           {/* Divider */}
-          <div className="mt-8">
+          <div className="mt-6 sm:mt-8">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-gray-300"></div>
@@ -265,8 +295,8 @@ const AuthPage: React.FC = () => {
           </div>
 
           {/* Toggle */}
-          <div className="mt-6 text-center">
-            <p className="text-gray-600">
+          <div className="mt-5 sm:mt-6 text-center">
+            <p className="text-gray-600 text-sm sm:text-base">
               {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
               <button
                 type="button"
@@ -285,7 +315,7 @@ const AuthPage: React.FC = () => {
 
         {/* Footer */}
         <div className="text-center">
-          <p className="text-sm text-gray-500">
+          <p className="text-xs sm:text-sm text-gray-500">
             🔒 Secure authentication with end-to-end encryption
           </p>
         </div>

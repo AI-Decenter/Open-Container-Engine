@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT user_id, key_hash FROM api_keys \n        WHERE key_prefix = $1 AND is_active = true \n        AND (expires_at IS NULL OR expires_at > NOW())\n        ",
+  "query": "\n        SELECT user_id, key_hash FROM api_keys \n        WHERE key_prefix = $1 AND is_active = true \n        AND (expires_at IS NULL OR expires_at > NOW())\n        ORDER BY created_at DESC\n        LIMIT 20\n        ",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "ed7ab61477ba129991cfbd2df35a01e5a599793080f2a4b1d07972c0846bbc39"
+  "hash": "be6b40cc827174e6838a27a3440734c49339f77fa53bd8e7cc069334b04076c2"
 }

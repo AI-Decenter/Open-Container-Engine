@@ -5,24 +5,21 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::jobs::deployment_job::DeploymentJob;
+use crate::notifications::{NotificationManager, NotificationType};
 use crate::services::kubernetes::KubernetesService;
 
 pub struct DeploymentWorker {
     receiver: mpsc::Receiver<DeploymentJob>,
-    k8s_service: KubernetesService,
     db_pool: PgPool,
+    notification_manager: NotificationManager,
 }
 
 impl DeploymentWorker {
-    pub fn new(
-        receiver: mpsc::Receiver<DeploymentJob>,
-        k8s_service: KubernetesService,
-        db_pool: PgPool,
-    ) -> Self {
-        Self {
-            receiver,
-            k8s_service,
-            db_pool,
+    pub fn new(receiver: mpsc::Receiver<DeploymentJob>, db_pool: PgPool, notification_manager: NotificationManager) -> Self {
+        Self { 
+            receiver, 
+            db_pool, 
+            notification_manager 
         }
     }
 
@@ -30,41 +27,76 @@ impl DeploymentWorker {
         info!("Deployment worker started");
 
         while let Some(job) = self.receiver.recv().await {
-            let k8s_service = self.k8s_service.clone();
-            let db_pool = self.db_pool.clone();
+            info!("Processing deployment job: {}", job.deployment_id);
 
-            // Spawn task để xử lý song song
-            tokio::spawn(async move {
-                Self::process_deployment(job, k8s_service, db_pool).await;
-            });
+            let k8s_service = match KubernetesService::for_deployment(&job.deployment_id, &job.user_id).await {
+                Ok(service) => service,
+                Err(e) => {
+                    error!(
+                        "Failed to create K8s service for deployment {} (user {}): {}",
+                        job.deployment_id, job.user_id, e
+                    );
+                    if let Err(e) = Self::update_deployment_status(
+                        &self.db_pool,
+                        job.deployment_id,
+                        "failed",
+                        None,
+                        Some(&format!("Failed to initialize Kubernetes service: {}", e)),
+                    )
+                    .await
+                    {
+                        error!("Failed to update deployment status: {}", e);
+                    }
+                    continue;
+                }
+            };
+
+            self.process_deployment(job, k8s_service).await;
         }
 
         warn!("Deployment worker stopped");
     }
 
-    async fn process_deployment(
-        job: DeploymentJob,
-        k8s_service: KubernetesService,
-        db_pool: PgPool,
-    ) {
+    async fn process_deployment(&self, job: DeploymentJob, k8s_service: KubernetesService) {
         info!(
-            "Processing deployment: {} ({})",
-            job.deployment_id, job.app_name
+            "Processing deployment: {} ({}) on port {}",
+            job.deployment_id, job.app_name, job.port
         );
 
         // Update status to "deploying"
-        if let Err(e) =
-            Self::update_deployment_status(&db_pool, job.deployment_id, "deploying", None, None)
-                .await
+        if let Err(e) = Self::update_deployment_status(
+            &self.db_pool,
+            job.deployment_id,
+            "deploying",
+            None,
+            None,
+        )
+        .await
         {
             error!("Failed to update deployment status to deploying: {}", e);
             return;
         }
 
+        // Send notification that deployment is being processed
+        self.notification_manager
+            .send_to_user(
+                job.user_id,
+                NotificationType::DeploymentStatusChanged {
+                    deployment_id: job.deployment_id,
+                    status: "deploying".to_string(),
+                    url: None,
+                    error_message: None,
+                },
+            )
+            .await;
+
         // Deploy to Kubernetes
         match k8s_service.deploy_application(&job).await {
             Ok(_) => {
-                info!("Successfully deployed to Kubernetes: {}", job.deployment_id);
+                info!("Successfully deployed to Kubernetes: {} on port {}", job.deployment_id, job.port);
+
+                // Wait a moment for ingress to be ready
+                tokio::time::sleep(Duration::from_secs(5)).await;
 
                 // Get the ingress URL after successful deployment
                 match k8s_service.get_ingress_url(&job.deployment_id).await {
@@ -73,7 +105,7 @@ impl DeploymentWorker {
 
                         // Update deployment with success status and URL
                         if let Err(e) = Self::update_deployment_status(
-                            &db_pool,
+                            &self.db_pool,
                             job.deployment_id,
                             "running",
                             ingress_url.as_deref(),
@@ -84,16 +116,29 @@ impl DeploymentWorker {
                             error!("Failed to update deployment status to running: {}", e);
                         } else {
                             info!("Deployment {} completed successfully", job.deployment_id);
-                            if let Some(url) = ingress_url {
-                                info!("Ingress URL available: {}", url);
+                            if let Some(url) = &ingress_url {
+                                info!("Application accessible at: {}", url);
                             }
+
+                            // Send success notification
+                            self.notification_manager
+                                .send_to_user(
+                                    job.user_id,
+                                    NotificationType::DeploymentStatusChanged {
+                                        deployment_id: job.deployment_id,
+                                        status: "running".to_string(),
+                                        url: ingress_url.clone(),
+                                        error_message: None,
+                                    },
+                                )
+                                .await;
                         }
                     }
                     Err(e) => {
                         error!("Failed to get ingress URL: {}", e);
                         // Still mark as running since deployment succeeded, just no URL yet
                         if let Err(e) = Self::update_deployment_status(
-                            &db_pool,
+                            &self.db_pool,
                             job.deployment_id,
                             "running",
                             None,
@@ -102,15 +147,34 @@ impl DeploymentWorker {
                         .await
                         {
                             error!("Failed to update deployment status: {}", e);
+                        } else {
+                            // Send partial success notification
+                            self.notification_manager
+                                .send_to_user(
+                                    job.user_id,
+                                    NotificationType::DeploymentStatusChanged {
+                                        deployment_id: job.deployment_id,
+                                        status: "running".to_string(),
+                                        url: None,
+                                        error_message: Some("Deployment successful but URL not ready yet".to_string()),
+                                    },
+                                )
+                                .await;
                         }
                     }
                 }
             }
             Err(e) => {
                 error!("Failed to deploy to Kubernetes: {}", e);
+                
+                // Cleanup namespace on failure
+                if let Err(cleanup_err) = k8s_service.delete_deployment_namespace(&job.deployment_id).await {
+                    warn!("Failed to cleanup namespace after deployment failure: {}", cleanup_err);
+                }
+                
                 // Update deployment with failed status
                 if let Err(db_err) = Self::update_deployment_status(
-                    &db_pool,
+                    &self.db_pool,
                     job.deployment_id,
                     "failed",
                     None,
@@ -119,6 +183,19 @@ impl DeploymentWorker {
                 .await
                 {
                     error!("Failed to update deployment status to failed: {}", db_err);
+                } else {
+                    // Send failure notification
+                    self.notification_manager
+                        .send_to_user(
+                            job.user_id,
+                            NotificationType::DeploymentStatusChanged {
+                                deployment_id: job.deployment_id,
+                                status: "failed".to_string(),
+                                url: None,
+                                error_message: Some(e.to_string()),
+                            },
+                        )
+                        .await;
                 }
             }
         }

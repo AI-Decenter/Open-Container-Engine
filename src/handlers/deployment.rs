@@ -5,12 +5,19 @@ use axum::{
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use tracing::{error, info, warn};
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::{
-    auth::AuthUser, deployment::models::*, error::AppError, handlers::auth::PaginationQuery,
-    AppState, DeploymentJob,
+    auth::AuthUser, 
+    deployment::models::*, 
+    error::AppError, 
+    handlers::auth::PaginationQuery, 
+    notifications::NotificationType,
+    services::kubernetes::KubernetesService, 
+    AppState, 
+    DeploymentJob
 };
 
 pub async fn create_deployment(
@@ -30,7 +37,7 @@ pub async fn create_deployment(
     .await?;
 
     if existing.is_some() {
-        return Err(AppError::conflict("App name already exists"));
+        return Err(AppError::conflict("App name"));
     }
 
     let deployment_id = Uuid::new_v4();
@@ -101,7 +108,18 @@ pub async fn create_deployment(
 
         return Err(AppError::internal("Failed to queue deployment"));
     }
-    tracing::info!("Deployment system initialized successfully");
+    tracing::info!("Deployment job queued successfully");
+
+    // Send notification about deployment creation
+    state.notification_manager
+        .send_to_user(
+            user.user_id,
+            NotificationType::DeploymentCreated {
+                deployment_id,
+                app_name: payload.app_name.clone(),
+            },
+        )
+        .await;
 
     // For now, we'll just return the response
 
@@ -122,6 +140,7 @@ pub async fn list_deployments(
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<Json<DeploymentListResponse>, AppError> {
     let limit = pagination.limit.min(100) as i64;
+
     let offset = ((pagination.page - 1) * pagination.limit) as i64;
 
     let deployments = sqlx::query_as!(
@@ -263,14 +282,40 @@ pub async fn scale_deployment(
         return Err(AppError::not_found("Deployment"));
     }
 
-    // TODO: Implement Kubernetes scaling logic here
+    // Create Kubernetes service for this deployment's namespace
+    let k8s_service = KubernetesService::for_deployment(&deployment_id, &user.user_id).await?;
 
-    Ok(Json(json!({
-        "id": deployment_id,
-        "replicas": payload.replicas,
-        "status": "scaling",
-        "message": "Deployment scaling in progress"
-    })))
+    // Scale the deployment
+    match k8s_service.scale_deployment(&deployment_id, payload.replicas).await {
+        Ok(_) => {
+            // Update status to "running"
+            sqlx::query!(
+                "UPDATE deployments SET status = 'running', updated_at = NOW() WHERE id = $1",
+                deployment_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            Ok(Json(json!({
+                "id": deployment_id,
+                "replicas": payload.replicas,
+                "status": "running",
+                "message": "Deployment scaled successfully"
+            })))
+        }
+        Err(e) => {
+            // Update status to failed
+            sqlx::query!(
+                "UPDATE deployments SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2",
+                format!("Failed to scale: {}", e),
+                deployment_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            Err(AppError::internal(&format!("Failed to scale deployment: {}", e)))
+        }
+    }
 }
 
 pub async fn start_deployment(
@@ -278,29 +323,65 @@ pub async fn start_deployment(
     user: AuthUser,
     Path(deployment_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    let result = sqlx::query!(
-        r#"
-        UPDATE deployments 
-        SET status = 'starting', updated_at = NOW()
-        WHERE id = $1 AND user_id = $2
-        "#,
+    // Check if deployment exists and belongs to user
+    let deployment = sqlx::query!(
+        "SELECT id, app_name, status, replicas FROM deployments WHERE id = $1 AND user_id = $2",
         deployment_id,
         user.user_id
+    )
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("Deployment"))?;
+
+    // Update status to "starting"
+    sqlx::query!(
+        "UPDATE deployments SET status = 'starting', updated_at = NOW() WHERE id = $1",
+        deployment_id
     )
     .execute(&state.db.pool)
     .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(AppError::not_found("Deployment"));
+    // Create Kubernetes service for user's namespace
+    let k8s_service = KubernetesService::for_deployment(&deployment_id, &user.user_id).await?;
+
+    // Scale deployment back to desired replicas
+    let target_replicas = if deployment.replicas <= 0 { 1 } else { deployment.replicas };
+    
+    match k8s_service.scale_deployment(&deployment_id, target_replicas).await {
+        Ok(_) => {
+            // Update status to "running"
+            sqlx::query!(
+                "UPDATE deployments SET status = 'running', replicas = $1, updated_at = NOW() WHERE id = $2",
+                target_replicas,
+                deployment_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            info!("Successfully started deployment: {}", deployment_id);
+
+            Ok(Json(json!({
+                "id": deployment_id,
+                "status": "running",
+                "replicas": target_replicas,
+                "message": "Deployment started successfully"
+            })))
+        }
+        Err(e) => {
+            error!("Failed to start deployment {}: {}", deployment_id, e);
+            
+            // Update status to failed
+            sqlx::query!(
+                "UPDATE deployments SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2",
+                format!("Failed to start: {}", e),
+                deployment_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            Err(AppError::internal(&format!("Failed to start deployment: {}", e)))
+        }
     }
-
-    // TODO: Implement Kubernetes start logic here
-
-    Ok(Json(json!({
-        "id": deployment_id,
-        "status": "starting",
-        "message": "Deployment is being started"
-    })))
 }
 
 pub async fn stop_deployment(
@@ -308,29 +389,61 @@ pub async fn stop_deployment(
     user: AuthUser,
     Path(deployment_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
-    let result = sqlx::query!(
-        r#"
-        UPDATE deployments 
-        SET status = 'stopping', updated_at = NOW()
-        WHERE id = $1 AND user_id = $2
-        "#,
+    // Check if deployment exists and belongs to user
+    let deployment = sqlx::query!(
+        "SELECT id, app_name, status FROM deployments WHERE id = $1 AND user_id = $2",
         deployment_id,
         user.user_id
+    )
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("Deployment"))?;
+
+    // Update status to "stopping"
+    sqlx::query!(
+        "UPDATE deployments SET status = 'stopping', updated_at = NOW() WHERE id = $1",
+        deployment_id
     )
     .execute(&state.db.pool)
     .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(AppError::not_found("Deployment"));
+    // Create Kubernetes service for user's namespace
+    let k8s_service = KubernetesService::for_deployment(&deployment_id, &user.user_id).await?;
+
+    // Scale deployment to 0 replicas to stop it
+    match k8s_service.scale_deployment(&deployment_id, 0).await {
+        Ok(_) => {
+            // Update status to "stopped"
+            sqlx::query!(
+                "UPDATE deployments SET status = 'stopped', replicas = 0, updated_at = NOW() WHERE id = $1",
+                deployment_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            info!("Successfully stopped deployment: {}", deployment_id);
+
+            Ok(Json(json!({
+                "id": deployment_id,
+                "status": "stopped",
+                "message": "Deployment stopped successfully"
+            })))
+        }
+        Err(e) => {
+            error!("Failed to stop deployment {}: {}", deployment_id, e);
+            
+            // Update status back to previous or failed
+            sqlx::query!(
+                "UPDATE deployments SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2",
+                format!("Failed to stop: {}", e),
+                deployment_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            Err(AppError::internal(&format!("Failed to stop deployment: {}", e)))
+        }
     }
-
-    // TODO: Implement Kubernetes stop logic here
-
-    Ok(Json(json!({
-        "id": deployment_id,
-        "status": "stopping",
-        "message": "Deployment is being stopped"
-    })))
 }
 
 pub async fn delete_deployment(
@@ -338,6 +451,63 @@ pub async fn delete_deployment(
     user: AuthUser,
     Path(deployment_id): Path<Uuid>,
 ) -> Result<Json<Value>, AppError> {
+    // First, check if deployment exists and belongs to user
+    let deployment = sqlx::query!(
+        "SELECT id, app_name, status FROM deployments WHERE id = $1 AND user_id = $2",
+        deployment_id,
+        user.user_id
+    )
+    .fetch_optional(&state.db.pool)
+    .await?
+    .ok_or_else(|| AppError::not_found("Deployment"))?;
+
+    info!("Deleting deployment: {} ({})", deployment_id, deployment.app_name);
+
+    // Update status to "deleting" first
+    sqlx::query!(
+        "UPDATE deployments SET status = 'deleting', updated_at = NOW() WHERE id = $1",
+        deployment_id
+    )
+    .execute(&state.db.pool)
+    .await?;
+
+    // Create Kubernetes service for this specific deployment's namespace
+    let k8s_service = match KubernetesService::for_deployment(&deployment_id, &user.user_id).await {
+        Ok(service) => service,
+        Err(e) => {
+            error!("Failed to create K8s service for deployment {} (user {}): {}", 
+                   deployment_id, user.user_id, e);
+            // Still try to delete from database even if K8s cleanup fails
+            let result = sqlx::query!(
+                "DELETE FROM deployments WHERE id = $1 AND user_id = $2",
+                deployment_id,
+                user.user_id
+            )
+            .execute(&state.db.pool)
+            .await?;
+
+            return Ok(Json(json!({
+                "message": "Deployment deleted from database, but Kubernetes cleanup may have failed",
+                "warning": format!("Failed to connect to Kubernetes: {}", e),
+                "deployment_id": deployment_id,
+                "app_name": deployment.app_name
+            })));
+        }
+    };
+
+    // Delete from Kubernetes (this will delete the entire namespace and all resources)
+    match k8s_service.delete_deployment(&deployment_id).await {
+        Ok(_) => {
+            info!("Successfully deleted Kubernetes namespace and all resources for deployment: {}", deployment_id);
+        }
+        Err(e) => {
+            warn!("Failed to delete Kubernetes resources for deployment {}: {}", deployment_id, e);
+            // Continue with database deletion even if K8s deletion fails
+            // But add the error to response
+        }
+    }
+
+    // Delete from database
     let result = sqlx::query!(
         "DELETE FROM deployments WHERE id = $1 AND user_id = $2",
         deployment_id,
@@ -350,22 +520,17 @@ pub async fn delete_deployment(
         return Err(AppError::not_found("Deployment"));
     }
 
-    // TODO: Implement Kubernetes deletion logic here
+    info!("Successfully deleted deployment: {} from database", deployment_id);
 
     Ok(Json(json!({
-        "message": "Deployment deleted successfully"
+        "message": "Deployment deleted successfully",
+        "deployment_id": deployment_id,
+        "app_name": deployment.app_name,
+        "namespace_deleted": true
     })))
 }
 
-pub async fn get_logs(
-    _state: State<AppState>,
-    _user: AuthUser,
-    _deployment_id: Path<Uuid>,
-    _query: Query<LogsQuery>,
-) -> Result<Json<LogsResponse>, AppError> {
-    // TODO: Implement Kubernetes logs retrieval
-    Ok(Json(LogsResponse { logs: vec![] }))
-}
+
 
 pub async fn get_metrics(
     _state: State<AppState>,
