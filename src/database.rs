@@ -1,6 +1,4 @@
 use sqlx::{Pool, Postgres, PgPool, migrate::MigrateDatabase};
-use std::time::Duration;
-use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct Database {

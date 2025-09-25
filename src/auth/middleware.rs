@@ -1,5 +1,5 @@
 use axum::{
-    extract::{FromRequestParts, State},
+    extract::FromRequestParts,
     http::{request::Parts, HeaderMap},
     async_trait,
 };
@@ -48,7 +48,7 @@ fn extract_token_from_headers(headers: &HeaderMap) -> Result<String, AppError> {
     }
 }
 
-async fn verify_api_key(state: &AppState, api_key: &str) -> Result<Uuid, AppError> {
+pub async fn verify_api_key(state: &AppState, api_key: &str) -> Result<Uuid, AppError> {
     tracing::debug!("Verifying API key: {}", api_key);
     // Extract prefix to find the API key
     let prefix = &api_key[..state.config.api_key_prefix.len().min(api_key.len())];

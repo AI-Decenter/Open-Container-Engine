@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::FromRow;
@@ -51,12 +50,26 @@ pub struct CreateDeploymentRequest {
     pub registry_auth: Option<RegistryAuth>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Validate, Default, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct ResourceRequirements {
-    /// CPU request/limit (e.g., "100m", "0.5")
-    pub cpu: Option<String>,
-    /// Memory request/limit (e.g., "128Mi", "1Gi")
-    pub memory: Option<String>,
+    /// CPU limit (e.g., "500m", "1")
+    pub cpu_limit: Option<String>,
+    /// Memory limit (e.g., "512Mi", "1Gi")
+    pub memory_limit: Option<String>,
+    /// CPU request (e.g., "100m", "0.1")
+    pub cpu_request: Option<String>,
+    /// Memory request (e.g., "128Mi", "256Mi")
+    pub memory_request: Option<String>,
+}
+impl Default for ResourceRequirements {
+    fn default() -> Self {
+        Self {
+            cpu_limit: Some("500m".to_string()),
+            memory_limit: Some("512Mi".to_string()),
+            cpu_request: Some("100m".to_string()),
+            memory_request: Some("128Mi".to_string()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]

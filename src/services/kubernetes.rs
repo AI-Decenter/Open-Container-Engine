@@ -27,6 +27,15 @@ pub struct KubernetesService {
     client: Client,
     namespace: String,
 }
+#[derive(Debug, Clone)]
+pub struct PodInfo {
+    pub name: String,
+    pub status: String,
+    pub ready: bool,
+    pub restart_count: i32,
+    pub node_name: Option<String>,
+    pub created_at: Option<String>,
+}
 
 impl KubernetesService {
     pub async fn new(namespace: Option<String>) -> Result<Self, AppError> {
@@ -112,7 +121,7 @@ impl KubernetesService {
 
         let namespace = Self::generate_deployment_namespace_static(deployment_id);
 
-        let mut service = Self {
+        let service = Self {
             client,
             namespace: namespace.clone(),
         };
@@ -1327,4 +1336,225 @@ async fn detect_cluster_type(&self) -> Result<String, AppError> {
 
         (None, None)
     }
+    pub async fn get_deployment_pods(&self, deployment_id: &Uuid) -> Result<Vec<PodInfo>, AppError> {
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::api::{Api, ListParams};
+
+    let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+    let lp = ListParams::default().labels(&format!("deployment-id={}", deployment_id));
+
+    let pod_list = pods
+        .list(&lp)
+        .await
+        .map_err(|e| AppError::internal(&format!("Failed to list pods: {}", e)))?;
+
+    let mut pod_infos = Vec::new();
+    for pod in pod_list.items {
+        if let Some(name) = &pod.metadata.name {
+            let status = if let Some(pod_status) = &pod.status {
+                pod_status.phase.clone().unwrap_or_else(|| "Unknown".to_string())
+            } else {
+                "Unknown".to_string()
+            };
+
+            let ready = if let Some(pod_status) = &pod.status {
+                pod_status.container_statuses
+                    .as_ref()
+                    .map(|statuses| statuses.iter().all(|cs| cs.ready))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
+            pod_infos.push(PodInfo {
+                name: name.clone(),
+                status,
+                ready,
+                restart_count: if let Some(pod_status) = &pod.status {
+                    pod_status.container_statuses
+                        .as_ref()
+                        .map(|statuses| statuses.iter().map(|cs| cs.restart_count).sum())
+                        .unwrap_or(0)
+                } else {
+                    0
+                },
+                node_name: pod.spec.as_ref().and_then(|s| s.node_name.clone()),
+                created_at: pod.metadata.creation_timestamp
+                    .map(|ts| ts.0.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+            });
+        }
+    }
+
+    Ok(pod_infos)
+}
+pub async fn get_pod_logs(
+    &self,
+    pod_name: &str,
+    tail_lines: Option<i64>,
+) -> Result<String, AppError> {
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::api::{Api, LogParams};
+    use tokio::time::{timeout, Duration};
+
+    tracing::info!("Getting logs from specific pod: {}", pod_name);
+    let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+
+    // Verify pod exists first
+    pods.get(pod_name).await
+        .map_err(|e| AppError::internal(&format!("Pod {} not found: {}", pod_name, e)))?;
+
+    let mut log_params = LogParams {
+        follow: false,
+        previous: false,
+        timestamps: true,
+        ..Default::default()
+    };
+
+    if let Some(tail) = tail_lines {
+        log_params.tail_lines = Some(tail);
+    }
+
+    let logs = timeout(
+        Duration::from_secs(15),
+        pods.logs(pod_name, &log_params)
+    )
+    .await
+    .map_err(|_| AppError::internal("Timeout while fetching logs"))?
+    .map_err(|e| AppError::internal(&format!("Failed to fetch logs: {}", e)))?;
+
+    Ok(logs)
+}
+pub async fn stream_pod_logs(
+    &self,
+    pod_name: &str,
+    tail_lines: Option<i64>,
+) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>, AppError> {
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::api::{Api, LogParams};
+
+    tracing::info!("Streaming logs from specific pod: {}", pod_name);
+    let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+
+    // Verify pod exists and is ready
+    let pod = pods.get(pod_name).await
+        .map_err(|e| AppError::internal(&format!("Pod {} not found: {}", pod_name, e)))?;
+
+    if let Some(status) = &pod.status {
+        if let Some(phase) = &status.phase {
+            tracing::info!("Pod {} is in phase: {}", pod_name, phase);
+            if phase != "Running" && phase != "Succeeded" {
+                return Err(AppError::internal(&format!("Pod {} is not ready (phase: {})", pod_name, phase)));
+            }
+        }
+    }
+
+    let mut log_params = LogParams {
+        follow: false,
+        previous: false,
+        since_seconds: None,
+        timestamps: true,
+        ..Default::default()
+    };
+
+    if let Some(tail) = tail_lines {
+        log_params.tail_lines = Some(tail);
+    }
+
+    let logs_result = pods.logs(pod_name, &log_params)
+        .await
+        .map_err(|e| AppError::internal(&format!("Failed to fetch logs: {}", e)))?;
+
+    let lines: Vec<String> = logs_result
+        .lines()
+        .map(|line| format!("{}\n", line))
+        .collect();
+
+    let stream = futures_util::stream::iter(
+        lines.into_iter().map(|line| Ok(Bytes::from(line)))
+    );
+
+    Ok(Box::pin(stream))
+}
+pub async fn stream_pod_logs_realtime(
+    &self,
+    pod_name: &str,
+    tail_lines: Option<i64>,
+) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, std::io::Error>> + Send>>, AppError> {
+    use k8s_openapi::api::core::v1::Pod;
+    use kube::api::{Api, LogParams};
+
+    tracing::info!("Real-time streaming logs from specific pod: {}", pod_name);
+    let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+
+    // Verify pod exists and is ready
+    let pod = pods.get(pod_name).await
+        .map_err(|e| AppError::internal(&format!("Pod {} not found: {}", pod_name, e)))?;
+
+    if let Some(status) = &pod.status {
+        if let Some(phase) = &status.phase {
+            tracing::info!("Pod {} is in phase: {}", pod_name, phase);
+            if phase != "Running" && phase != "Succeeded" {
+                return Err(AppError::internal(&format!("Pod {} is not ready (phase: {})", pod_name, phase)));
+            }
+        }
+    }
+
+    let mut log_params = LogParams {
+        follow: true, // Enable real-time streaming
+        previous: false,
+        since_seconds: None,
+        timestamps: true,
+        ..Default::default()
+    };
+
+    if let Some(tail) = tail_lines {
+        log_params.tail_lines = Some(tail);
+    }
+
+    let async_buf_read = pods
+        .log_stream(pod_name, &log_params)
+        .await
+        .map_err(|e| AppError::internal(&format!("Failed to create log stream: {}", e)))?;
+
+    let stream = futures_util::stream::unfold(async_buf_read, |mut reader| async move {
+        let mut line = String::new();
+        match reader.read_line(&mut line).await {
+            Ok(0) => None, // EOF
+            Ok(_) => Some((Ok(Bytes::from(line)), reader)),
+            Err(e) => Some((Err(e), reader)),
+        }
+    });
+
+    Ok(Box::pin(stream))
+}
+pub async fn get_deployment_logs_merged(
+    &self,
+    deployment_id: &Uuid,
+    tail_lines: Option<i64>,
+) -> Result<String, AppError> {
+    let pods = self.get_deployment_pods(deployment_id).await?;
+    let mut all_logs = Vec::new();
+
+    for pod_info in pods {
+        match self.get_pod_logs(&pod_info.name, tail_lines).await {
+            Ok(pod_logs) => {
+                // Add pod identifier to each log line
+                let prefixed_logs: Vec<String> = pod_logs
+                    .lines()
+                    .map(|line| format!("[{}] {}", pod_info.name, line))
+                    .collect();
+                all_logs.extend(prefixed_logs);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to get logs from pod {}: {}", pod_info.name, e);
+                all_logs.push(format!("[{}] ERROR: Failed to get logs: {}", pod_info.name, e));
+            }
+        }
+    }
+
+    // Sort logs by timestamp if they have timestamps
+    all_logs.sort();
+
+    Ok(all_logs.join("\n"))
+}
 }

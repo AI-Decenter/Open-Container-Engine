@@ -1,19 +1,22 @@
 // LogsPage.jsx
 import { useState, useEffect, useRef } from 'react';
-import { ClipboardDocumentListIcon } from "@heroicons/react/24/outline";
+import { ClipboardDocumentListIcon, CubeIcon } from "@heroicons/react/24/outline";
 import { useParams } from 'react-router-dom';
 import api from '../../api/api';
 
 export default function LogsPage() {
   const { deploymentId } = useParams();
   const [logs, setLogs] = useState<any[]>([]);
+  const [pods, setPods] = useState([]);
+  const [selectedPod, setSelectedPod] = useState('all'); // 'all' or specific pod name
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingPods, setIsLoadingPods] = useState(false);
   const [error, setError] = useState<any>(null);
-  const wsRef: any = useRef(null);
+  const wsRef = useRef<any>(null);
   const logsEndRef: any = useRef(null);
-  const reconnectTimeoutRef: any = useRef(null);
+  const reconnectTimeoutRef = useRef<any>(null);
   const reconnectDelay = useRef(1000);
 
   // Auto-scroll to bottom when new logs arrive
@@ -36,6 +39,29 @@ export default function LogsPage() {
     return null;
   };
 
+  // Get WebSocket URL with proper protocol
+  const getWebSocketUrl = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    return `${protocol}//${host}`;
+  };
+
+  // Load pods list
+  const loadPods = async () => {
+    if (!deploymentId) return;
+
+    setIsLoadingPods(true);
+    try {
+      const response = await api.get(`/v1/deployments/${deploymentId}/pods`);
+      setPods(response.data.pods || []);
+    } catch (err) {
+      console.error('Failed to load pods:', err);
+      // Don't set error for pods loading failure, just log it
+    } finally {
+      setIsLoadingPods(false);
+    }
+  };
+
   // Load historical logs from API
   const loadHistoricalLogs = async (retryCount = 0) => {
     if (!deploymentId) return;
@@ -44,7 +70,14 @@ export default function LogsPage() {
     setError(null);
 
     try {
-      const response = await api.get(`/v1/deployments/${deploymentId}/logs?tail=100`);
+      let endpoint;
+      if (selectedPod === 'all') {
+        endpoint = `/v1/deployments/${deploymentId}/logs?tail=100`;
+      } else {
+        endpoint = `/v1/deployments/${deploymentId}/pods/${selectedPod}/logs?tail=100`;
+      }
+
+      const response = await api.get(endpoint);
 
       if (response.data.logs) {
         // Parse historical logs - assuming they come as a single string with newlines
@@ -62,7 +95,8 @@ export default function LogsPage() {
               timestamp,
               message: line,
               id: `history-${index}`,
-              isHistorical: true
+              isHistorical: true,
+              podName: selectedPod === 'all' ? 'merged' : selectedPod
             };
           });
 
@@ -113,11 +147,22 @@ export default function LogsPage() {
     setIsConnecting(true);
     setError(null);
 
-    // Add token to WebSocket URL as query parameter
-    const wsUrl = `ws://localhost:3000/v1/deployments/${deploymentId}/logs/stream?tail=50&token=${encodeURIComponent('Bearer ' + token)}`;
+    // Build WebSocket URL based on selected pod with proper protocol
+    const baseWsUrl = getWebSocketUrl();
+    let wsUrl;
+    
+    if (selectedPod === 'all') {
+      wsUrl = `${baseWsUrl}/v1/deployments/${deploymentId}/logs/stream?tail=50&token=${encodeURIComponent('Bearer ' + token)}`;
+    } else {
+      wsUrl = `${baseWsUrl}/v1/deployments/${deploymentId}/pods/${selectedPod}/logs/ws?tail=50&token=${encodeURIComponent('Bearer ' + token)}`;
+    }
+
+    console.log('Connecting to WebSocket:', wsUrl.replace(/token=[^&]+/, 'token=***')); // Log URL without token
+
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+      console.log('WebSocket connected');
       setIsConnected(true);
       setIsConnecting(false);
       reconnectDelay.current = 1000; // Reset reconnect delay
@@ -126,7 +171,9 @@ export default function LogsPage() {
     ws.onmessage = (event) => {
       // Skip connection confirmation messages
       if (event.data === 'Connected to log stream' ||
+        event.data.includes('Connected to log stream for pod:') ||
         event.data === 'Log stream ended' ||
+        event.data.includes('Log stream ended for pod:') ||
         event.data.includes('Authentication')) {
         return;
       }
@@ -136,10 +183,11 @@ export default function LogsPage() {
         timestamp,
         message: event.data,
         id: `live-${timestamp}-${Math.random()}`,
-        isHistorical: false
+        isHistorical: false,
+        podName: selectedPod === 'all' ? 'merged' : selectedPod
       };
 
-      setLogs((prev: any) => [...prev, newLog]);
+      setLogs(prev => [...prev, newLog]);
     };
 
     ws.onerror = (error) => {
@@ -148,6 +196,7 @@ export default function LogsPage() {
     };
 
     ws.onclose = (event) => {
+      console.log(`WebSocket disconnected: ${event.code} ${event.reason || ''}`);
       setIsConnected(false);
       setIsConnecting(false);
       wsRef.current = null;
@@ -168,6 +217,7 @@ export default function LogsPage() {
       const delay = reconnectDelay.current;
       reconnectDelay.current = Math.min(delay * 2, 30000); // Max 30s
 
+      console.log(`Attempting to reconnect in ${delay}ms (attempt ${Math.log2(delay / 1000) + 1})`);
       setError(`Disconnected. Reconnecting in ${delay / 1000}s...`);
 
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -178,9 +228,25 @@ export default function LogsPage() {
     wsRef.current = ws;
   };
 
-  // Initialize: Load history first, then connect WebSocket
+  // Handle pod selection change
+  const handlePodChange = (podName: any) => {
+    if (podName === selectedPod) return;
+
+    // Disconnect current WebSocket
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+
+    setSelectedPod(podName);
+    setLogs([]); // Clear current logs
+  };
+
+  // Initialize: Load pods and history first, then connect WebSocket
   useEffect(() => {
     if (deploymentId) {
+      // Load pods first
+      loadPods();
+
       // Load historical logs first
       loadHistoricalLogs().then(() => {
         // Small delay to show historical logs before connecting WebSocket
@@ -201,6 +267,17 @@ export default function LogsPage() {
     };
   }, [deploymentId]);
 
+  // Re-load logs when pod selection changes
+  useEffect(() => {
+    if (deploymentId && selectedPod) {
+      loadHistoricalLogs().then(() => {
+        setTimeout(() => {
+          connectWebSocket();
+        }, 500);
+      });
+    }
+  }, [selectedPod]);
+
   // Manual refresh - reload everything
   const handleRefresh = async () => {
     setLogs([]); // Clear logs
@@ -208,8 +285,8 @@ export default function LogsPage() {
       wsRef.current.close();
     }
 
-    // Reload historical logs then reconnect WebSocket
-    await loadHistoricalLogs();
+    // Reload pods and historical logs then reconnect WebSocket
+    await Promise.all([loadPods(), loadHistoricalLogs()]);
     setTimeout(() => {
       connectWebSocket();
     }, 500);
@@ -222,7 +299,7 @@ export default function LogsPage() {
 
   // Download logs
   const handleDownload = () => {
-    const logText = logs.map((log) =>
+    const logText = logs.map(log =>
       `[${new Date(log.timestamp).toLocaleString()}] ${log.message}`
     ).join('\n');
 
@@ -230,7 +307,8 @@ export default function LogsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `logs-${deploymentId}-${new Date().toISOString().split('T')[0]}.txt`;
+    const podSuffix = selectedPod === 'all' ? 'all-pods' : selectedPod;
+    a.download = `logs-${deploymentId}-${podSuffix}-${new Date().toISOString().split('T')[0]}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -264,7 +342,7 @@ export default function LogsPage() {
   return (
     <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
       <div className="px-8 py-6 bg-gray-50 border-b border-gray-200">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-4">
           <div className="flex items-center">
             <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mr-4">
               <ClipboardDocumentListIcon className="h-6 w-6 text-gray-600" />
@@ -305,6 +383,44 @@ export default function LogsPage() {
           </div>
         </div>
 
+        {/* Pod Selection */}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <CubeIcon className="h-5 w-5 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">View logs from:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => handlePodChange('all')}
+              disabled={isLoadingPods}
+              className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${selectedPod === 'all'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              All Pods (Merged)
+            </button>
+            {pods.map((pod: any) => (
+              <button
+                key={pod.name}
+                onClick={() => handlePodChange(pod.name)}
+                disabled={isLoadingPods}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-all flex items-center space-x-1 ${selectedPod === pod.name
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <span>{pod.name}</span>
+                <span className={`w-2 h-2 rounded-full ${pod.ready ? 'bg-green-400' : 'bg-red-400'
+                  }`}></span>
+              </button>
+            ))}
+            {isLoadingPods && (
+              <div className="px-3 py-1 text-sm text-gray-500">Loading pods...</div>
+            )}
+          </div>
+        </div>
+
         {error && (
           <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">
             {error}
@@ -316,7 +432,7 @@ export default function LogsPage() {
         <div className="bg-gray-900 text-white font-mono text-sm p-6 h-96 overflow-y-auto custom-scrollbar">
           {logs.length > 0 ? (
             <>
-              {logs.map((log) => (
+              {logs.map(log => (
                 <div key={log.id} className="flex space-x-4 py-1 hover:bg-gray-800 px-2 rounded group">
                   <span className="text-gray-500 flex-shrink-0 select-none">
                     {new Date(log.timestamp).toLocaleTimeString()}
@@ -324,6 +440,11 @@ export default function LogsPage() {
                   <span className={`flex-shrink-0 select-none ${log.isHistorical ? 'text-gray-600' : 'text-green-400'}`}>
                     {log.isHistorical ? '◦' : '│'}
                   </span>
+                  {selectedPod === 'all' && log.podName !== 'merged' && (
+                    <span className="text-blue-400 flex-shrink-0 select-none text-xs">
+                      [{log.podName}]
+                    </span>
+                  )}
                   <span className="flex-1 break-all whitespace-pre-wrap">{log.message}</span>
                 </div>
               ))}
@@ -336,7 +457,10 @@ export default function LogsPage() {
                 {isLoadingHistory || isConnecting ? 'Loading logs...' : 'No logs available at the moment.'}
               </p>
               <p className="text-gray-600 text-sm mt-2">
-                Logs will appear here once your application starts generating them.
+                {selectedPod === 'all'
+                  ? 'Logs from all pods will appear here once your application starts generating them.'
+                  : `Logs from pod "${selectedPod}" will appear here once it starts generating them.`
+                }
               </p>
             </div>
           )}
@@ -360,6 +484,7 @@ export default function LogsPage() {
         <div className="px-6 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between">
           <span>
             {logs.filter(log => log.isHistorical).length} historical + {logs.filter(log => !log.isHistorical).length} live logs
+            {selectedPod !== 'all' && ` from ${selectedPod}`}
           </span>
           <span>Total: {logs.length} lines</span>
         </div>

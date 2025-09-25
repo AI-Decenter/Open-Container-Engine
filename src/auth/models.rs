@@ -33,6 +33,17 @@ pub struct ApiKey {
     pub is_active: bool,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PasswordResetToken {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub token: String,
+    pub expires_at: DateTime<Utc>,
+    pub used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct RegisterRequest {
     /// Username must be between 3 and 50 characters
@@ -128,6 +139,34 @@ pub struct ApiKeyListItem {
 pub struct ApiKeyListResponse {
     pub api_keys: Vec<ApiKeyListItem>,
     pub pagination: PaginationInfo,
+}
+
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub struct ForgotPasswordRequest {
+    /// Valid email address
+    #[validate(email)]
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ForgotPasswordResponse {
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize, Validate, ToSchema)]
+pub struct ResetPasswordRequest {
+    /// Password reset token
+    pub token: String,
+    /// New password must be at least 8 characters
+    #[validate(length(min = 8))]
+    pub new_password: String,
+    /// Must match the new password field
+    pub confirm_password: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ResetPasswordResponse {
+    pub message: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

@@ -5,4 +5,3 @@ pub mod manager;
 
 pub use manager::NotificationManager;
 pub use models::*;
-pub use websocket::*;

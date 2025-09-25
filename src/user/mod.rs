@@ -1,3 +1,3 @@
 pub mod models;
+pub mod webhook_models;
 
-pub use models::*;

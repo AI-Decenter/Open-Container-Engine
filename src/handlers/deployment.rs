@@ -123,7 +123,7 @@ pub async fn create_deployment(
 
     // For now, we'll just return the response
 
-    Ok(Json(DeploymentResponse {
+    Ok(Json(DeploymentResponse {    
         id: deployment_id,
         app_name: payload.app_name,
         image: payload.image,

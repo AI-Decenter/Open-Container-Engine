@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 
 const AuthPage: React.FC = () => {
   const [isRegister, setIsRegister] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,7 +26,12 @@ const AuthPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      if (isRegister) {
+      if (isForgotPassword) {
+        // Forgot password process
+        await api.post('/v1/auth/forgot-password', { email });
+        setSuccess('If an account with that email exists, a password reset link has been sent to your email.');
+        return;
+      } else if (isRegister) {
         if (password !== confirm_password) {
           setError('Passwords do not match.');
           return;
@@ -113,7 +119,9 @@ const AuthPage: React.FC = () => {
           <div className="text-center mb-6 sm:mb-8">
             <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 bg-linear-to-r from-indigo-500 to-purple-600 rounded-full flex items-center justify-center mb-4 sm:mb-6 shadow-lg">
               <svg className="w-8 h-8 sm:w-10 sm:h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {isRegister ? (
+                {isForgotPassword ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                ) : isRegister ? (
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 ) : (
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -121,10 +129,15 @@ const AuthPage: React.FC = () => {
               </svg>
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-              {isRegister ? 'Create Account' : 'Welcome Back'}
+              {isForgotPassword ? 'Reset Password' : isRegister ? 'Create Account' : 'Welcome Back'}
             </h2>
             <p className="text-gray-600 text-sm sm:text-base">
-              {isRegister ? 'Join us and start your journey today' : 'Please sign in to your account'}
+              {isForgotPassword
+                ? 'Enter your email address and we\'ll send you a link to reset your password'
+                : isRegister 
+                  ? 'Join us and start your journey today' 
+                  : 'Please sign in to your account'
+              }
             </p>
           </div>
 
@@ -179,31 +192,33 @@ const AuthPage: React.FC = () => {
               </div>
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  required
-                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 pr-12 text-sm sm:text-base"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  <EyeIcon isVisible={showPassword} />
-                </button>
+            {!isForgotPassword && (
+              <div>
+                <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    required
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300 placeholder-gray-500 pr-12 text-sm sm:text-base"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    <EyeIcon isVisible={showPassword} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {isRegister && (
               <div>
@@ -262,7 +277,14 @@ const AuthPage: React.FC = () => {
                 </div>
               ) : (
                 <span className="flex items-center justify-center">
-                  {isRegister ? (
+                  {isForgotPassword ? (
+                    <>
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Send Reset Link
+                    </>
+                  ) : isRegister ? (
                     <>
                       <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
@@ -297,19 +319,69 @@ const AuthPage: React.FC = () => {
           {/* Toggle */}
           <div className="mt-5 sm:mt-6 text-center">
             <p className="text-gray-600 text-sm sm:text-base">
-              {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegister(!isRegister);
-                  setError(null);
-                  setSuccess(null);
-                }}
-                className="font-semibold text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
-              >
-                {isRegister ? 'Sign in here' : 'Create account'}
-              </button>
+              {isForgotPassword ? (
+                <>
+                  Remember your password?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(false);
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    className="font-semibold text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
+                  >
+                    Sign in here
+                  </button>
+                </>
+              ) : isRegister ? (
+                <>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegister(false);
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    className="font-semibold text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
+                  >
+                    Sign in here
+                  </button>
+                </>
+              ) : (
+                <>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRegister(true);
+                      setError(null);
+                      setSuccess(null);
+                    }}
+                    className="font-semibold text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
+                  >
+                    Create account
+                  </button>
+                </>
+              )}
             </p>
+            {!isForgotPassword && !isRegister && (
+              <p className="text-gray-600 text-sm sm:text-base mt-2">
+                Forgot your password?{' '}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsForgotPassword(true);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  className="font-semibold text-indigo-600 hover:text-indigo-500 transition-colors duration-200"
+                >
+                  Reset it here
+                </button>
+              </p>
+            )}
           </div>
         </div>
 

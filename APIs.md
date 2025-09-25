@@ -5,8 +5,12 @@ This document provides comprehensive documentation for all API endpoints availab
 ## Base URL
 
 ```
-https://api.container-engine.app
+http://localhost:3000
 ```
+
+For production deployment: Replace with your actual domain.
+
+**Domain Suffix:** `vinhomes.co.uk` (configured in environment)
 
 ## Authentication
 
@@ -37,18 +41,21 @@ Content-Type: application/json
   "username": "string",
   "email": "string",
   "password": "string",
-  "confirmPassword": "string"
+  "confirm_password": "string"
 }
 ```
 
 **Response (201 Created):**
 ```json
 {
-  "id": "usr-a1b2c3d4e5",
-  "username": "string",
-  "email": "string",
-  "createdAt": "2025-01-01T00:00:00Z",
-  "status": "active"
+  "access_token": "string",
+  "refresh_token": "string", 
+  "expires_at": "2025-01-01T01:00:00Z",
+  "user": {
+    "id": "uuid",
+    "username": "string",
+    "email": "string"
+  }
 }
 ```
 
@@ -80,11 +87,11 @@ Content-Type: application/json
 **Response (200 OK):**
 ```json
 {
-  "accessToken": "string",
-  "refreshToken": "string",
-  "expiresAt": "2025-01-01T01:00:00Z",
+  "access_token": "string",
+  "refresh_token": "string",
+  "expires_at": "2025-01-01T01:00:00Z",
   "user": {
-    "id": "usr-a1b2c3d4e5",
+    "id": "uuid",
     "username": "string",
     "email": "string"
   }
@@ -111,15 +118,15 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "refreshToken": "string"
+  "refresh_token": "string"
 }
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "accessToken": "string",
-  "expiresAt": "2025-01-01T01:00:00Z"
+  "access_token": "string",
+  "expires_at": "2025-01-01T01:00:00Z"
 }
 ```
 
@@ -145,6 +152,61 @@ Authorization: Bearer <access-token>
 
 ---
 
+## Forgot Password
+
+Request a password reset link.
+
+**Endpoint:** `POST /v1/auth/forgot-password`
+
+**Headers:**
+```http
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "email": "string"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "If an account with that email exists, a password reset link has been sent."
+}
+```
+
+---
+
+## Reset Password
+
+Reset password using a token.
+
+**Endpoint:** `POST /v1/auth/reset-password`
+
+**Headers:**
+```http
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "token": "string",
+  "new_password": "string"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Password reset successfully"
+}
+```
+
+---
+
 ## API Key Management
 
 ### Create API Key
@@ -163,21 +225,17 @@ Content-Type: application/json
 ```json
 {
   "name": "string",
-  "description": "string",
-  "expiresAt": "2025-12-31T23:59:59Z" // optional
+  "description": "string"
 }
 ```
 
 **Response (201 Created):**
 ```json
 {
-  "id": "key-a1b2c3d4e5",
-  "name": "string",
-  "description": "string",
-  "apiKey": "ce_api_1234567890abcdef...",
-  "createdAt": "2025-01-01T00:00:00Z",
-  "expiresAt": "2025-12-31T23:59:59Z",
-  "lastUsed": null
+  "id": "uuid",
+  "name": "string", 
+  "key": "ce_dev_1234567890abcdef...",
+  "created_at": "2025-01-01T00:00:00Z"
 }
 ```
 
@@ -201,21 +259,22 @@ Authorization: Bearer <access-token>
 **Response (200 OK):**
 ```json
 {
-  "apiKeys": [
+  "api_keys": [
     {
-      "id": "key-a1b2c3d4e5",
+      "id": "uuid",
       "name": "string",
       "description": "string",
-      "createdAt": "2025-01-01T00:00:00Z",
-      "expiresAt": "2025-12-31T23:59:59Z",
-      "lastUsed": "2025-01-01T12:00:00Z"
+      "key_prefix": "ce_dev_",
+      "created_at": "2025-01-01T00:00:00Z",
+      "expires_at": "2025-12-31T23:59:59Z",
+      "last_used": "2025-01-01T12:00:00Z"
     }
   ],
   "pagination": {
     "page": 1,
     "limit": 10,
     "total": 1,
-    "totalPages": 1
+    "total_pages": 1
   }
 }
 ```
@@ -258,13 +317,12 @@ Authorization: Bearer <access-token>
 **Response (200 OK):**
 ```json
 {
-  "id": "usr-a1b2c3d4e5",
+  "id": "uuid",
   "username": "string",
   "email": "string",
-  "createdAt": "2025-01-01T00:00:00Z",
-  "lastLogin": "2025-01-01T12:00:00Z",
-  "deploymentCount": 5,
-  "apiKeyCount": 2
+  "created_at": "2025-01-01T00:00:00Z",
+  "last_login": "2025-01-01T12:00:00Z",
+  "is_active": true
 }
 ```
 
@@ -293,10 +351,10 @@ Content-Type: application/json
 **Response (200 OK):**
 ```json
 {
-  "id": "usr-a1b2c3d4e5",
+  "id": "uuid",
   "username": "string",
   "email": "string",
-  "updatedAt": "2025-01-01T12:00:00Z"
+  "updated_at": "2025-01-01T12:00:00Z"
 }
 ```
 
@@ -317,9 +375,9 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "currentPassword": "string",
-  "newPassword": "string",
-  "confirmNewPassword": "string"
+  "current_password": "string",
+  "new_password": "string",
+  "confirm_new_password": "string"
 }
 ```
 
@@ -349,25 +407,25 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "appName": "string",
+  "app_name": "string",
   "image": "string",
   "port": 80,
-  "envVars": {
+  "env_vars": {
     "ENV_VAR_NAME": "value"
   },
-  "replicas": 1, // optional, default: 1
-  "resources": { // optional
+  "replicas": 1,
+  "resources": {
     "cpu": "100m",
     "memory": "128Mi"
   },
-  "healthCheck": { // optional
+  "health_check": {
     "path": "/health",
-    "initialDelaySeconds": 5,
-    "periodSeconds": 10,
-    "timeoutSeconds": 5,
-    "failureThreshold": 3
+    "initial_delay_seconds": 30,
+    "period_seconds": 10,
+    "timeout_seconds": 5,
+    "failure_threshold": 3
   },
-  "registryAuth": { // optional, for private registries
+  "registry_auth": {
     "username": "string",
     "password": "string"
   }
@@ -377,12 +435,12 @@ Content-Type: application/json
 **Response (201 Created):**
 ```json
 {
-  "id": "dpl-a1b2c3d4e5",
-  "appName": "string",
+  "id": "uuid",
+  "app_name": "string",
   "image": "string",
   "status": "pending",
-  "url": "https://app-name.container-engine.app",
-  "createdAt": "2025-01-01T00:00:00Z",
+  "url": null,
+  "created_at": "2025-01-01T00:00:00Z",
   "message": "Deployment is being processed"
 }
 ```
@@ -415,21 +473,21 @@ Authorization: Bearer <api-key>
 {
   "deployments": [
     {
-      "id": "dpl-a1b2c3d4e5",
-      "appName": "string",
+      "id": "uuid",
+      "app_name": "string",
       "image": "string",
       "status": "running",
-      "url": "https://app-name.container-engine.app",
+      "url": "https://app-name.vinhomes.co.uk",
       "replicas": 1,
-      "createdAt": "2025-01-01T00:00:00Z",
-      "updatedAt": "2025-01-01T00:05:00Z"
+      "created_at": "2025-01-01T00:00:00Z",
+      "updated_at": "2025-01-01T00:05:00Z"
     }
   ],
   "pagination": {
     "page": 1,
     "limit": 10,
     "total": 1,
-    "totalPages": 1
+    "total_pages": 1
   }
 }
 ```
@@ -450,30 +508,32 @@ Authorization: Bearer <api-key>
 **Response (200 OK):**
 ```json
 {
-  "id": "dpl-a1b2c3d4e5",
-  "appName": "string",
+  "id": "uuid",
+  "user_id": "uuid", 
+  "app_name": "string",
   "image": "string",
   "status": "running",
-  "url": "https://app-name.container-engine.app",
+  "url": "https://app-name.vinhomes.co.uk",
   "port": 80,
-  "replicas": 1,
-  "envVars": {
+  "env_vars": {
     "ENV_VAR_NAME": "value"
   },
+  "replicas": 1,
   "resources": {
     "cpu": "100m",
     "memory": "128Mi"
   },
-  "healthCheck": {
+  "health_check": {
     "path": "/health",
-    "initialDelaySeconds": 5,
-    "periodSeconds": 10,
-    "timeoutSeconds": 5,
-    "failureThreshold": 3
+    "initial_delay_seconds": 30,
+    "period_seconds": 10,
+    "timeout_seconds": 5,
+    "failure_threshold": 3
   },
-  "createdAt": "2025-01-01T00:00:00Z",
-  "updatedAt": "2025-01-01T00:05:00Z",
-  "deployedAt": "2025-01-01T00:05:00Z"
+  "created_at": "2025-01-01T00:00:00Z",
+  "updated_at": "2025-01-01T00:05:00Z",
+  "deployed_at": "2025-01-01T00:05:00Z",
+  "error_message": null
 }
 ```
 
@@ -494,12 +554,12 @@ Content-Type: application/json
 **Request Body:**
 ```json
 {
-  "image": "string", // optional
-  "envVars": { // optional
+  "image": "string",
+  "env_vars": {
     "ENV_VAR_NAME": "new_value"
   },
-  "replicas": 2, // optional
-  "resources": { // optional
+  "replicas": 2,
+  "resources": {
     "cpu": "200m",
     "memory": "256Mi"
   }
@@ -509,10 +569,10 @@ Content-Type: application/json
 **Response (200 OK):**
 ```json
 {
-  "id": "dpl-a1b2c3d4e5",
+  "id": "uuid",
   "status": "updating",
   "message": "Deployment update in progress",
-  "updatedAt": "2025-01-01T12:00:00Z"
+  "updated_at": "2025-01-01T12:00:00Z"
 }
 ```
 
@@ -540,10 +600,10 @@ Content-Type: application/json
 **Response (200 OK):**
 ```json
 {
-  "id": "dpl-a1b2c3d4e5",
+  "id": "uuid",
   "replicas": 5,
-  "status": "scaling",
-  "message": "Deployment scaling in progress"
+  "status": "running",
+  "message": "Deployment scaled successfully"
 }
 ```
 
@@ -563,9 +623,9 @@ Authorization: Bearer <api-key>
 **Response (200 OK):**
 ```json
 {
-  "id": "dpl-a1b2c3d4e5",
-  "status": "stopping",
-  "message": "Deployment is being stopped"
+  "id": "uuid",
+  "status": "stopped",
+  "message": "Deployment stopped successfully"
 }
 ```
 
@@ -585,9 +645,10 @@ Authorization: Bearer <api-key>
 **Response (200 OK):**
 ```json
 {
-  "id": "dpl-a1b2c3d4e5",
-  "status": "starting",
-  "message": "Deployment is being started"
+  "id": "uuid",
+  "status": "running",
+  "replicas": 1,
+  "message": "Deployment started successfully"
 }
 ```
 
@@ -607,7 +668,10 @@ Authorization: Bearer <api-key>
 **Response (200 OK):**
 ```json
 {
-  "message": "Deployment deleted successfully"
+  "message": "Deployment deleted successfully",
+  "deployment_id": "uuid",
+  "app_name": "string",
+  "namespace_deleted": true
 }
 ```
 
@@ -634,20 +698,12 @@ Content-Type: application/json
 }
 ```
 
-**Response (201 Created):**
+**Response (500 Internal Server Error):**
 ```json
 {
-  "id": "dom-a1b2c3d4e5",
-  "domain": "myapp.example.com",
-  "status": "pending",
-  "createdAt": "2025-01-01T00:00:00Z",
-  "dnsRecords": [
-    {
-      "type": "CNAME",
-      "name": "myapp.example.com",
-      "value": "app-name.container-engine.app"
-    }
-  ]
+  "error": {
+    "message": "Domain management not yet implemented"
+  }
 }
 ```
 
@@ -667,15 +723,7 @@ Authorization: Bearer <api-key>
 **Response (200 OK):**
 ```json
 {
-  "domains": [
-    {
-      "id": "dom-a1b2c3d4e5",
-      "domain": "myapp.example.com",
-      "status": "active",
-      "createdAt": "2025-01-01T00:00:00Z",
-      "verifiedAt": "2025-01-01T00:15:00Z"
-    }
-  ]
+  "domains": []
 }
 ```
 
@@ -692,10 +740,12 @@ Remove a custom domain from a deployment.
 Authorization: Bearer <api-key>
 ```
 
-**Response (200 OK):**
+**Response (500 Internal Server Error):**
 ```json
 {
-  "message": "Custom domain removed successfully"
+  "error": {
+    "message": "Domain management not yet implemented"
+  }
 }
 ```
 
@@ -717,8 +767,6 @@ Authorization: Bearer <api-key>
 **Query Parameters:**
 - `tail` (optional): Number of lines to return from the end (default: 100)
 - `follow` (optional): Stream logs in real-time (default: false)
-- `since` (optional): Return logs since timestamp (ISO 8601)
-- `until` (optional): Return logs until timestamp (ISO 8601)
 
 **Response (200 OK):**
 ```json
@@ -726,7 +774,7 @@ Authorization: Bearer <api-key>
   "logs": [
     {
       "timestamp": "2025-01-01T12:00:00Z",
-      "level": "info",
+      "level": "info", 
       "message": "Application started successfully",
       "source": "app"
     }
@@ -736,7 +784,7 @@ Authorization: Bearer <api-key>
 
 **WebSocket Endpoint for Real-time Logs:**
 ```
-wss://api.container-engine.app/v1/deployments/{deploymentId}/logs/stream
+ws://localhost:3000/v1/deployments/{deploymentId}/logs/stream
 ```
 
 ---
@@ -752,36 +800,14 @@ Get performance metrics for a deployment.
 Authorization: Bearer <api-key>
 ```
 
-**Query Parameters:**
-- `from` (optional): Start time for metrics (ISO 8601)
-- `to` (optional): End time for metrics (ISO 8601)
-- `resolution` (optional): Metric resolution (1m, 5m, 1h, 1d)
-
 **Response (200 OK):**
 ```json
 {
-  "metrics": {
-    "cpu": [
-      {
-        "timestamp": "2025-01-01T12:00:00Z",
-        "value": 0.25
-      }
-    ],
-    "memory": [
-      {
-        "timestamp": "2025-01-01T12:00:00Z",
-        "value": 134217728
-      }
-    ],
-    "requests": [
-      {
-        "timestamp": "2025-01-01T12:00:00Z",
-        "value": 100
-      }
-    ]
-  }
+  "metrics": {}
 }
 ```
+
+Note: Metrics implementation is currently a stub.
 
 ---
 
@@ -806,10 +832,85 @@ Authorization: Bearer <api-key>
     "ready": 2,
     "available": 2
   },
-  "lastHealthCheck": "2025-01-01T12:00:00Z",
-  "uptime": "2h 30m 45s",
-  "restartCount": 0
+  "last_health_check": "2025-01-01T12:00:00Z",
+  "uptime": "0s",
+  "restart_count": 0
 }
+```
+
+---
+
+## Health Check
+
+Check the overall health of the Container Engine API.
+
+**Endpoint:** `GET /health`
+
+**Response (200 OK):**
+```json
+{
+  "status": "healthy",
+  "service": "container-engine", 
+  "version": "0.1.0"
+}
+```
+
+---
+
+## WebSocket Notifications
+
+Real-time notifications are available via WebSocket connection:
+
+**Connection URL:**
+```
+ws://localhost:3000/v1/ws/notifications
+```
+
+**Health Check URL:**
+```
+ws://localhost:3000/v1/ws/health
+```
+
+**Authentication:**
+Include Authorization header with Bearer token when connecting.
+
+**Event Format:**
+```json
+{
+  "type": "deployment_status_changed",
+  "deployment_id": "uuid",
+  "timestamp": "2025-01-01T12:00:00Z",
+  "data": {
+    "status": "running",
+    "url": "https://app-name.vinhomes.co.uk"
+  }
+}
+```
+
+---
+
+## Testing Endpoints
+
+### Send Test Notification
+
+Trigger a test notification (for development).
+
+**Endpoint:** `GET /v1/notifications/test`
+
+**Headers:**
+```http
+Authorization: Bearer <api-key>
+```
+
+### Get Notification Stats
+
+Get notification system statistics.
+
+**Endpoint:** `GET /v1/notifications/stats`
+
+**Headers:**
+```http
+Authorization: Bearer <api-key>
 ```
 
 ---
@@ -822,79 +923,64 @@ All API endpoints return consistent error responses:
 ```json
 {
   "error": {
-    "code": "string",
     "message": "string",
-    "details": {} // optional additional error details
+    "details": "string"
   }
 }
 ```
 
 **Common HTTP Status Codes:**
 - `400 Bad Request`: Invalid request parameters
-- `401 Unauthorized`: Missing or invalid authentication
+- `401 Unauthorized`: Missing or invalid authentication  
 - `403 Forbidden`: Insufficient permissions
 - `404 Not Found`: Resource not found
-- `409 Conflict`: Resource conflict (e.g., duplicate name)
+- `409 Conflict`: Resource conflict (e.g., duplicate app name)
 - `422 Unprocessable Entity`: Invalid data format
-- `429 Too Many Requests`: Rate limit exceeded
 - `500 Internal Server Error`: Server error
 
 ---
 
-## Rate Limiting
+## Environment Configuration
 
-API requests are rate-limited per API key:
+The API uses the following environment variables:
 
-- **Authentication endpoints**: 10 requests per minute
-- **Deployment operations**: 30 requests per minute
-- **Read operations**: 100 requests per minute
-- **Logs and metrics**: 60 requests per minute
+**Required:**
+- `DATABASE_URL`: PostgreSQL connection string
+- `REDIS_URL`: Redis connection string
+- `JWT_SECRET`: Secret key for JWT tokens
 
-Rate limit headers are included in all responses:
-```http
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 99
-X-RateLimit-Reset: 1641024000
-```
+**Optional:**
+- `PORT`: Server port (default: 3000)
+- `DOMAIN_SUFFIX`: Domain suffix for deployments (default: vinhomes.co.uk)
+- `WEBHOOK_URL`: Webhook URL for deployment events
+- `KUBECONFIG_PATH`: Path to Kubernetes config file
+- `KUBERNETES_NAMESPACE`: Default Kubernetes namespace
+
+**Email Configuration (Optional):**
+- `AWS_SES_SMTP_HOST`: SMTP host for email service
+- `AWS_SES_SMTP_PORT`: SMTP port (default: 587)
+- `AWS_SES_USERNAME`: SMTP username
+- `AWS_SES_PASSWORD`: SMTP password
+- `EMAIL_FROM`: From email address
+- `EMAIL_FROM_NAME`: From email name
 
 ---
 
-## WebSocket Events
+## Webhook Integration
 
-Real-time events are available via WebSocket connection:
+When enabled, the API sends webhook notifications for deployment events to the configured `WEBHOOK_URL`.
 
-**Connection URL:**
-```
-wss://api.container-engine.app/v1/events
-```
-
-**Authentication:**
-Include API key in connection query parameter:
-```
-wss://api.container-engine.app/v1/events?token=<api-key>
-```
-
-**Event Format:**
+**Webhook Payload:**
 ```json
 {
-  "type": "deployment.status.changed",
-  "deploymentId": "dpl-a1b2c3d4e5",
+  "deployment_id": "uuid",
+  "status": "completed|failed|started",
+  "type": "deployment_completed|deployment_failed|deployment_started",
   "timestamp": "2025-01-01T12:00:00Z",
-  "data": {
-    "status": "running",
-    "previousStatus": "pending"
-  }
+  "app_name": "string",
+  "user_id": "uuid",
+  "url": "https://app-name.vinhomes.co.uk"
 }
 ```
 
-**Available Event Types:**
-- `deployment.created`
-- `deployment.status.changed`
-- `deployment.updated`
-- `deployment.deleted`
-- `domain.verified`
-- `domain.failed`
-
 ---
-
-This API documentation covers all the essential endpoints for a complete container engine platform with user management, authentication, deployment management, and monitoring capabilities.

@@ -51,7 +51,10 @@ class WebSocketService {
     try {
       this.isConnecting = true;
       // Backend WebSocket URL - backend runs on port 3000
-      const wsUrl = `ws://localhost:3000/v1/ws/notifications?token=${encodeURIComponent(token)}`;
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${window.location.host}/v1/ws/notifications?token=${encodeURIComponent(token)}`;
+      // const wsUrl = `${wsProtocol}//localhost:3000/v1/ws/notifications?token=${encodeURIComponent(token)}`;
+
       console.log('Connecting to WebSocket:', wsUrl);
       this.ws = new WebSocket(wsUrl);
 
@@ -65,7 +68,7 @@ class WebSocketService {
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
           console.log('Received notification:', message);
-          
+
           // Notify all registered handlers
           this.handlers.forEach(handler => {
             try {
@@ -83,7 +86,7 @@ class WebSocketService {
         console.log('WebSocket disconnected:', event.code, event.reason);
         this.isConnecting = false;
         this.ws = null;
-        
+
         // Only reconnect if we should auto-connect and have a token
         if (this.shouldAutoConnect && localStorage.getItem('access_token')) {
           this.scheduleReconnect();
@@ -108,9 +111,9 @@ class WebSocketService {
 
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    
+
     console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`);
-    
+
     setTimeout(() => {
       if (this.shouldAutoConnect) {
         this.connect();
@@ -120,7 +123,7 @@ class WebSocketService {
 
   public subscribe(handler: NotificationHandler): () => void {
     this.handlers.add(handler);
-    
+
     // Return unsubscribe function
     return () => {
       this.handlers.delete(handler);

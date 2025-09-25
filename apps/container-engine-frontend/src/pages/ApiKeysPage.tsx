@@ -378,20 +378,20 @@ const ApiKeysPage: React.FC = () => {
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50">
-        <div className="p-8">
+        <div className="p-2 xs:p-3 sm:p-6 md:p-8 max-w-7xl mx-auto w-full">
           {/* Header Section */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
+          <div className="mb-6 xs:mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
               <div>
-                <h1 className="text-4xl font-bold text-gray-900 mb-2">API Keys</h1>
-                <p className="text-gray-600">Manage your API keys to authenticate requests to our services.</p>
+                <h1 className="text-2xl xs:text-3xl sm:text-4xl font-bold text-gray-900 mb-1 xs:mb-2">API Keys</h1>
+                <p className="text-xs xs:text-sm sm:text-base text-gray-600 max-w-xs sm:max-w-md">Manage your API keys to authenticate requests to our services.</p>
               </div>
               <button
                 onClick={() => setModalState('creating')}
-                className="inline-flex items-center px-6 py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-medium"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1 px-3 sm:px-6 py-2 sm:py-3 bg-linear-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:from-blue-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-medium max-w-xs sm:max-w-none min-w-0 truncate"
               >
-                <PlusIcon className="h-5 w-5 mr-2" />
-                Create API Key
+                <PlusIcon className="h-5 w-5 mr-1" />
+                <span className="truncate">Create API Key</span>
               </button>
             </div>
           </div>
@@ -423,8 +423,8 @@ const ApiKeysPage: React.FC = () => {
           {!loading && !error && (
             <>
               {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+              <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-3 xs:gap-4 md:gap-6 mb-6 xs:mb-8">
+                <div className="bg-white rounded-2xl p-3 xs:p-4 sm:p-6 shadow-lg border border-gray-100 min-w-0">
                   <div className="flex items-center">
                     <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mr-4">
                       <KeyIcon className="h-6 w-6 text-blue-600" />
@@ -436,7 +436,7 @@ const ApiKeysPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                <div className="bg-white rounded-2xl p-3 xs:p-4 sm:p-6 shadow-lg border border-gray-100 min-w-0">
                   <div className="flex items-center">
                     <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mr-4">
                       <ShieldCheckIcon className="h-6 w-6 text-green-600" />
@@ -448,7 +448,7 @@ const ApiKeysPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+                <div className="bg-white rounded-2xl p-3 xs:p-4 sm:p-6 shadow-lg border border-gray-100 min-w-0">
                   <div className="flex items-center">
                     <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mr-4">
                       <ClockIcon className="h-6 w-6 text-purple-600" />
@@ -464,33 +464,33 @@ const ApiKeysPage: React.FC = () => {
               {/* Controls */}
               {
                 apiKeys && apiKeys.length > 0 && (
-                  <div className="mb-6 flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <span className="text-sm text-gray-600">
+                  <div className="mb-4 xs:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                    <div className="flex items-center space-x-2 xs:space-x-4">
+                      <span className="text-xs xs:text-sm text-gray-600">
                         Showing {apiKeys.length > 0 ? ((currentPage - 1) * limit + 1) : 0} to {Math.min(currentPage * limit, total)} of {total} entries
                       </span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <label htmlFor="limit" className="text-sm text-gray-600">Show:</label>
+                    <div className="flex items-center space-x-1 xs:space-x-2">
+                      <label htmlFor="limit" className="text-xs xs:text-sm text-gray-600">Show:</label>
                       <select
                         id="limit"
                         value={limit}
                         onChange={(e) => handleLimitChange(Number(e.target.value))}
-                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="px-2 xs:px-3 py-1 xs:py-2 border border-gray-300 rounded-lg text-xs xs:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
                         <option value={5}>5</option>
                         <option value={10}>10</option>
                         <option value={25}>25</option>
                         <option value={50}>50</option>
                       </select>
-                      <span className="text-sm text-gray-600">entries</span>
+                      <span className="text-xs xs:text-sm text-gray-600">entries</span>
                     </div>
                   </div>
                 )
               }
 
               {/* API Keys Table */}
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-x-auto">
                 {total === 0 ? (
                   <div className="text-center py-20">
                     <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -508,57 +508,54 @@ const ApiKeysPage: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-                      <h3 className="text-lg font-semibold text-gray-900">Your API Keys</h3>
+                    <div className="px-3 xs:px-6 py-3 xs:py-4 bg-gray-50 border-b border-gray-200 min-w-[400px] xs:min-w-0">
+                      <h3 className="text-base xs:text-lg font-semibold text-gray-900">Your API Keys</h3>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
+                      <table className="min-w-[600px] xs:min-w-full divide-y divide-gray-200 text-xs xs:text-sm">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Key ID</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Description</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Used</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Expires</th>
-                            <th className="relative px-6 py-4"><span className="sr-only">Actions</span></th>
+                            <th className="px-3 xs:px-6 py-2 xs:py-4 text-left font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                            <th className="px-3 xs:px-6 py-2 xs:py-4 text-left font-semibold text-gray-500 uppercase tracking-wider">Key ID</th>
+                            <th className="px-3 xs:px-6 py-2 xs:py-4 text-left font-semibold text-gray-500 uppercase tracking-wider">Description</th>
+                            <th className="px-3 xs:px-6 py-2 xs:py-4 text-left font-semibold text-gray-500 uppercase tracking-wider">Created</th>
+                            <th className="px-3 xs:px-6 py-2 xs:py-4 text-left font-semibold text-gray-500 uppercase tracking-wider">Last Used</th>
+                            <th className="px-3 xs:px-6 py-2 xs:py-4 text-left font-semibold text-gray-500 uppercase tracking-wider">Expires</th>
+                            <th className="relative px-3 xs:px-6 py-2 xs:py-4"><span className="sr-only">Actions</span></th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {apiKeys && apiKeys.length > 0 && apiKeys.map((key:any) => (
                             <tr key={key.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center">
-                                  <div className="w-8 h-8 bg-linear-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-3">
+                              <td className="px-3 xs:px-6 py-2 xs:py-4 whitespace-nowrap max-w-[120px] xs:max-w-[180px] truncate">
+                                <div className="flex items-center min-w-0">
+                                  <div className="w-8 h-8 bg-linear-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center mr-2 xs:mr-3 flex-shrink-0">
                                     <KeyIcon className="h-4 w-4 text-white" />
                                   </div>
-                                  <span className="text-sm font-semibold text-gray-900">{key.name}</span>
+                                  <span className="font-semibold text-gray-900 truncate">{key.name}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center group">
-                                  <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-700 border">
-                                    {maskKeyId(key.id)}
-                                  </code>
+                              <td className="px-3 xs:px-6 py-2 xs:py-4 whitespace-nowrap">
+                                <div className="flex items-center group min-w-0">
+                                  <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-700 border truncate max-w-[100px] xs:max-w-[160px]">{maskKeyId(key.id)}</code>
                                   <button
                                     onClick={() => {
                                       navigator.clipboard.writeText(key.id);
                                       toast.success('Key ID copied to clipboard!');
-                                      // Optional: Add toast notification here
                                     }}
-                                    className="ml-2 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all opacity-0 group-hover:opacity-100"
+                                    className="ml-1 xs:ml-2 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-all opacity-0 group-hover:opacity-100"
                                     title="Copy full Key ID"
                                   >
                                     <ClipboardIcon className="h-4 w-4" />
                                   </button>
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
-                                <span className="text-sm text-gray-600 max-w-xs truncate block">
+                              <td className="px-3 xs:px-6 py-2 xs:py-4 max-w-[120px] xs:max-w-xs truncate">
+                                <span className="text-gray-600 truncate block">
                                   {key.description || <em className="text-gray-400">No description</em>}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="px-3 xs:px-6 py-2 xs:py-4 whitespace-nowrap">
                                 <div className="flex items-center text-sm text-gray-600">
                                   <CalendarIcon className="h-4 w-4 mr-1" />
                                   {formatDate(key.created_at)}

@@ -49,6 +49,12 @@ const BellIcon = () => (
 );
 
 
+const WebhookIcon = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+  </svg>
+);
+
 const MenuIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -60,6 +66,7 @@ const navItems = [
   { path: '/deployments', label: 'Deployments', icon: DeploymentIcon },
   { path: '/deployments/new', label: 'New Deployment', icon: PlusIcon },
   { path: '/api-keys', label: 'API Keys', icon: KeyIcon },
+  { path: '/webhooks', label: 'Webhooks', icon: WebhookIcon },
   { path: '/settings', label: 'Account Settings', icon: SettingsIcon },
 ];
 
@@ -153,7 +160,7 @@ const Sidebar: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, o
           </div>
 
           {/* Logout Button */}
-          <div className="p-4 border-t border-slate-700/50">
+          <div className="p-4 border-t border-slate-700/50 mb-12">
             <button
               onClick={handleLogout}
               className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 group"

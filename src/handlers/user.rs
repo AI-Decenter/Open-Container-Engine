@@ -4,7 +4,6 @@ use axum::{
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use serde_json::{json, Value};
-use utoipa::path;
 use validator::Validate;
 
 use crate::{

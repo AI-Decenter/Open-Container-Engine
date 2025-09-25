@@ -7,19 +7,27 @@ use uuid::Uuid;
 use crate::jobs::deployment_job::DeploymentJob;
 use crate::notifications::{NotificationManager, NotificationType};
 use crate::services::kubernetes::KubernetesService;
+use crate::services::webhook::WebhookService;
 
 pub struct DeploymentWorker {
     receiver: mpsc::Receiver<DeploymentJob>,
     db_pool: PgPool,
     notification_manager: NotificationManager,
+    webhook_service: WebhookService,
 }
 
 impl DeploymentWorker {
-    pub fn new(receiver: mpsc::Receiver<DeploymentJob>, db_pool: PgPool, notification_manager: NotificationManager) -> Self {
+    pub fn new(
+        receiver: mpsc::Receiver<DeploymentJob>, 
+        db_pool: PgPool, 
+        notification_manager: NotificationManager,
+        webhook_service: WebhookService,
+    ) -> Self {
         Self { 
             receiver, 
             db_pool, 
-            notification_manager 
+            notification_manager,
+            webhook_service,
         }
     }
 
@@ -77,6 +85,9 @@ impl DeploymentWorker {
             return;
         }
 
+        // Call user webhooks for deployment started
+        self.call_user_webhooks(job.user_id, crate::user::webhook_models::WebhookEvent::DeploymentStarted, &job).await;
+
         // Send notification that deployment is being processed
         self.notification_manager
             .send_to_user(
@@ -120,6 +131,9 @@ impl DeploymentWorker {
                                 info!("Application accessible at: {}", url);
                             }
 
+                            // Call user webhooks for successful deployment
+                            self.call_user_webhooks_with_url(job.user_id, crate::user::webhook_models::WebhookEvent::DeploymentCompleted, &job, ingress_url.clone()).await;
+
                             // Send success notification
                             self.notification_manager
                                 .send_to_user(
@@ -148,6 +162,9 @@ impl DeploymentWorker {
                         {
                             error!("Failed to update deployment status: {}", e);
                         } else {
+                            // Call user webhooks for completed deployment
+                            self.call_user_webhooks(job.user_id, crate::user::webhook_models::WebhookEvent::DeploymentCompleted, &job).await;
+
                             // Send partial success notification
                             self.notification_manager
                                 .send_to_user(
@@ -184,6 +201,9 @@ impl DeploymentWorker {
                 {
                     error!("Failed to update deployment status to failed: {}", db_err);
                 } else {
+                    // Call user webhooks for failed deployment
+                    self.call_user_webhooks(job.user_id, crate::user::webhook_models::WebhookEvent::DeploymentFailed, &job).await;
+
                     // Send failure notification
                     self.notification_manager
                         .send_to_user(
@@ -260,5 +280,106 @@ impl DeploymentWorker {
             deployment_id
         );
         None
+    }
+
+    // Call user-configured webhooks instead of system webhook
+    async fn call_user_webhooks(
+        &self,
+        user_id: Uuid,
+        event: crate::user::webhook_models::WebhookEvent,
+        deployment_job: &DeploymentJob,
+    ) {
+        self.call_user_webhooks_with_url(user_id, event, deployment_job, None).await;
+    }
+
+    // Call user-configured webhooks with optional URL
+    async fn call_user_webhooks_with_url(
+        &self,
+        user_id: Uuid,
+        event: crate::user::webhook_models::WebhookEvent,
+        deployment_job: &DeploymentJob,
+        app_url: Option<String>,
+    ) {
+        // Get all active webhooks for this user that subscribe to this event
+        let event_str = event.as_str();
+        let webhooks = match sqlx::query!(
+            r#"
+            SELECT id, url, secret 
+            FROM user_webhooks 
+            WHERE user_id = $1 AND is_active = true 
+            AND ($2 = ANY(events) OR 'all' = ANY(events))
+            "#,
+            user_id,
+            event_str
+        )
+        .fetch_all(&self.db_pool)
+        .await
+        {
+            Ok(webhooks) => webhooks,
+            Err(e) => {
+                error!("Failed to fetch user webhooks for user {}: {}", user_id, e);
+                return;
+            }
+        };
+
+        if webhooks.is_empty() {
+            info!("No active webhooks found for user {} and event {}", user_id, event_str);
+            return;
+        }
+
+        let client = reqwest::Client::new();
+        
+        // Determine status and URL based on event
+        let (status, url): (&str, Option<String>) = match event {
+            crate::user::webhook_models::WebhookEvent::DeploymentStarted => ("started", None),
+            crate::user::webhook_models::WebhookEvent::DeploymentCompleted => ("completed", app_url),
+            crate::user::webhook_models::WebhookEvent::DeploymentFailed => ("failed", None),
+            crate::user::webhook_models::WebhookEvent::DeploymentDeleted => ("deleted", None),
+            crate::user::webhook_models::WebhookEvent::All => ("unknown", None), // This shouldn't happen in practice
+        };
+        
+        for webhook in webhooks {
+            // Use the same payload format as the old webhook service
+            let webhook_payload = serde_json::json!({
+                "deployment_id": deployment_job.deployment_id,
+                "status": status,
+                "type": event_str,
+                "timestamp": chrono::Utc::now(),
+                "app_name": deployment_job.app_name,
+                "user_id": deployment_job.user_id,
+                "url": url
+            });
+
+            let mut request = client
+                .post(&webhook.url)
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Container-Engine-Webhook/1.0")
+                .json(&webhook_payload)
+                .timeout(Duration::from_secs(10));
+
+            // Add signature if secret is provided
+            if let Some(secret) = webhook.secret {
+                // TODO: Implement HMAC signature
+                // let signature = create_hmac_signature(&webhook_payload, &secret);
+                // request = request.header("X-Webhook-Signature", signature);
+            }
+
+            match request.send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        info!("Successfully sent webhook to {} for event {}", webhook.url, event_str);
+                    } else {
+                        warn!(
+                            "Webhook call failed: {} returned status {}",
+                            webhook.url,
+                            response.status()
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to send webhook to {}: {}", webhook.url, e);
+                }
+            }
+        }
     }
 }

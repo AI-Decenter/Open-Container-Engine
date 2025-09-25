@@ -14,6 +14,7 @@ import FeaturesPage from './pages/FeaturesPage';
 import DocumentationPage from './pages/DocumentationPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import TermsOfServicePage from './pages/TermsOfServicePage';
+import WebhooksPage from './pages/WebhooksPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -40,6 +41,7 @@ function App() {
               <Route path="/deployments/new" element={<ProtectedRoute><NewDeploymentPage /></ProtectedRoute>} />
               <Route path="/deployments/:deploymentId" element={<ProtectedRoute><DeploymentDetailPage /></ProtectedRoute>} />
               <Route path="/api-keys" element={<ProtectedRoute><ApiKeysPage /></ProtectedRoute>} />
+              <Route path="/webhooks" element={<ProtectedRoute><WebhooksPage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><AccountSettingsPage /></ProtectedRoute>} />
 
               {/* Default route */}

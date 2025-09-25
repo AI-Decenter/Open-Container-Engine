@@ -17,6 +17,7 @@ mod auth;
 mod config;
 mod database;
 mod deployment;
+mod email;
 mod error;
 mod handlers;
 mod jobs;
@@ -24,8 +25,11 @@ mod notifications;
 mod services;
 mod user;
 
+use crate::email::EmailService;
 use crate::jobs::{deployment_job::DeploymentJob, deployment_worker::DeploymentWorker};
 use crate::notifications::NotificationManager;
+use crate::services::webhook::WebhookService;
+
 use config::Config;
 use database::Database;
 use error::AppError;
@@ -58,6 +62,10 @@ use tokio::sync::mpsc;
             auth::models::ApiKeyListItem,
             auth::models::ApiKeyListResponse,
             auth::models::PaginationInfo,
+            auth::models::ForgotPasswordRequest,
+            auth::models::ForgotPasswordResponse,
+            auth::models::ResetPasswordRequest,
+            auth::models::ResetPasswordResponse,
             user::models::UserProfile,
             user::models::UpdateProfileRequest,
             user::models::ChangePasswordRequest,
@@ -91,17 +99,20 @@ pub struct AppState {
     pub config: Config,
     pub deployment_sender: mpsc::Sender<DeploymentJob>,
     pub notification_manager: NotificationManager,
+    pub email_service: EmailService,
+    pub webhook_service: WebhookService,
 }
 // Setup function in main.rs
 pub async fn setup_deployment_system(
     db_pool: sqlx::PgPool,
     notification_manager: NotificationManager,
+    webhook_service: WebhookService,
 ) -> Result<mpsc::Sender<DeploymentJob>, Box<dyn std::error::Error>> {
     // Create channel for deployment jobs
     let (deployment_sender, deployment_receiver) = mpsc::channel::<DeploymentJob>(100);
 
     // Start deployment worker
-    let worker = DeploymentWorker::new(deployment_receiver, db_pool, notification_manager);
+    let worker = DeploymentWorker::new(deployment_receiver, db_pool, notification_manager, webhook_service);
 
     tokio::spawn(async move {
         worker.start().await;
@@ -134,8 +145,10 @@ async fn open_browser_on_startup(port: u16) {
     });
 }
 #[tokio::main]
-
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load environment variables from .env.local file
+    dotenv::from_filename(".env.local").ok();
+    
     // Initialize tracing
     tracing_subscriber::registry()
         .with(
@@ -168,9 +181,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup notification manager
     let notification_manager = NotificationManager::new();
 
-    // Setup deployment system
-    let deployment_sender = setup_deployment_system(db.pool.clone(), notification_manager.clone()).await?;
+    // Setup webhook service
+    let webhook_service = WebhookService::new();
 
+    // Setup deployment system
+    let deployment_sender =
+        setup_deployment_system(db.pool.clone(), notification_manager.clone(), webhook_service.clone()).await?;
+    // Setup email service with better error handling
+    let email_service = match (
+        std::env::var("MAILTRAP_USERNAME"),
+        std::env::var("MAILTRAP_PASSWORD")
+    ) {
+        (Ok(username), Ok(password)) => {
+            match EmailService::new(
+                &std::env::var("MAILTRAP_SMTP_HOST")
+                    .unwrap_or_else(|_| "live.smtp.mailtrap.io".to_string()),
+                std::env::var("MAILTRAP_SMTP_PORT")
+                    .unwrap_or_else(|_| "587".to_string())
+                    .parse()
+                    .unwrap_or(587),
+                &username,
+                &password,
+                &std::env::var("EMAIL_FROM")
+                    .unwrap_or_else(|_| "noreply@vinhomes.co.uk".to_string()),
+                &std::env::var("EMAIL_FROM_NAME")
+                    .unwrap_or_else(|_| "Container Engine".to_string()),
+            ) {
+                Ok(service) => {
+                    tracing::info!("Email service initialized successfully with Mailtrap");
+                    service
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to initialize email service: {}", e);
+                    tracing::warn!("Email functionality will be disabled");
+                    // Create a dummy email service that doesn't send emails
+                    EmailService::new(
+                        "localhost",
+                        587,
+                        "dummy",
+                        "dummy",
+                        "noreply@vinhomes.co.uk",
+                        "Container Engine",
+                    ).unwrap_or_else(|_| panic!("Failed to create dummy email service"))
+                }
+            }
+        },
+        _ => {
+            tracing::warn!("Email credentials not provided. Email functionality will be disabled");
+            EmailService::new(
+                "localhost",
+                587,
+                "dummy",
+                "dummy", 
+                "noreply@vinhomes.co.uk",
+                "Container Engine",
+            ).unwrap_or_else(|_| panic!("Failed to create dummy email service"))
+        }
+    };
+    
     // Create app state
     let state = AppState {
         db,
@@ -178,6 +246,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: config.clone(),
         deployment_sender,
         notification_manager,
+        email_service,
+        webhook_service,
     };
 
     // Build our application with routes
@@ -238,6 +308,8 @@ fn create_app(state: AppState) -> Router {
         .route("/v1/auth/login", post(handlers::auth::login))
         .route("/v1/auth/refresh", post(handlers::auth::refresh_token))
         .route("/v1/auth/logout", post(handlers::auth::logout))
+        .route("/v1/auth/forgot-password", post(handlers::auth::forgot_password))
+        .route("/v1/auth/reset-password", post(handlers::auth::reset_password))
         // API Key management
         .route("/v1/api-keys", get(handlers::auth::list_api_keys))
         .route("/v1/api-keys", post(handlers::auth::create_api_key))
@@ -288,7 +360,6 @@ fn create_app(state: AppState) -> Router {
             "/v1/deployments/:deployment_id/stop",
             post(handlers::deployment::stop_deployment),
         )
-        
         .route(
             "/v1/deployments/:deployment_id/metrics",
             get(handlers::deployment::get_metrics),
@@ -318,6 +389,12 @@ fn create_app(state: AppState) -> Router {
             "/v1/deployments/:deployment_id/logs",
             get(handlers::logs::get_logs_handler),
         )
+         .route(
+            "/v1/deployments/:deployment_id/pods",
+            get(handlers::logs::get_deployment_pods),
+        )
+        .route("/v1/deployments/:deployment_id/pods/:pod_name/logs", get(handlers::logs::get_pod_logs))
+        .route("/v1/deployments/:deployment_id/pods/:pod_name/logs/ws", get(handlers::logs::ws_pod_logs_handler))
         // WebSocket notifications
         .route(
             "/v1/ws/notifications",
@@ -335,6 +412,25 @@ fn create_app(state: AppState) -> Router {
         .route(
             "/v1/notifications/stats",
             get(handlers::notifications::get_notification_stats),
+        )
+        // Webhook management
+        .route("/v1/webhooks", get(handlers::webhooks::list_webhooks))
+        .route("/v1/webhooks", post(handlers::webhooks::create_webhook))
+        .route(
+            "/v1/webhooks/:webhook_id",
+            get(handlers::webhooks::get_webhook),
+        )
+        .route(
+            "/v1/webhooks/:webhook_id",
+            axum::routing::put(handlers::webhooks::update_webhook),
+        )
+        .route(
+            "/v1/webhooks/:webhook_id",
+            axum::routing::delete(handlers::webhooks::delete_webhook),
+        )
+        .route(
+            "/v1/webhooks/:webhook_id/test",
+            post(handlers::webhooks::test_webhook),
         )
         // Serve static files
         .fallback_service(serve_dir)

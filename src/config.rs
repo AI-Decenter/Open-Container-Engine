@@ -26,7 +26,9 @@ impl Config {
 
         // Try to load the environment-specific file, fall back to default .env
         if let Err(_) = dotenv::from_filename(env_file) {
-            dotenv::dotenv().ok();
+            if let Err(_) = dotenv::from_filename(".env.local") {
+                dotenv::dotenv().ok();
+            }
         }
 
         let config = Config {
