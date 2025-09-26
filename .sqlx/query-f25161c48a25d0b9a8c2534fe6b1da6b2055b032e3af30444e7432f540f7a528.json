@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO domains (id, deployment_id, domain, status, created_at)\n        VALUES ($1, $2, $3, 'pending', $4)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Varchar",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f25161c48a25d0b9a8c2534fe6b1da6b2055b032e3af30444e7432f540f7a528"
+}

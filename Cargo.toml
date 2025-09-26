@@ -67,6 +67,14 @@ validator = { version = "0.18", features = ["derive"] }
 # Regex
 regex = "1.0"
 
+# DNS and SSL certificate management
+trust-dns-resolver = "0.23"
+rustls = { version = "0.23", features = ["ring"] }
+rustls-pemfile = "2.0"
+acme-lib = "0.9"
+base64 = "0.22"
+sha2 = "0.10"
+
 # OpenAPI documentation
 utoipa = { version = "4.0", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "4.0", features = ["axum"] }

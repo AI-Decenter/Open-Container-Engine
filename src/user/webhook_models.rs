@@ -53,20 +53,43 @@ pub struct UpdateWebhookRequest {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WebhookEvent {
+    #[serde(alias = "DeploymentStarted", alias = "deployment-started")]
     DeploymentStarted,
+    #[serde(alias = "DeploymentCompleted", alias = "deployment-completed")]
     DeploymentCompleted,
+    #[serde(alias = "DeploymentFailed", alias = "deployment-failed")]
     DeploymentFailed,
+    #[serde(alias = "DeploymentDeleted", alias = "deployment-deleted")]
     DeploymentDeleted,
+    #[serde(alias = "DeploymentScaling", alias = "deployment-scaling")]
+    DeploymentScaling,
+    #[serde(alias = "DeploymentScaled", alias = "deployment-scaled")]
+    DeploymentScaled,
+    #[serde(alias = "DeploymentScaleFailed", alias = "deployment-scale-failed")]
+    DeploymentScaleFailed,
+    #[serde(alias = "DeploymentStartFailed", alias = "deployment-start-failed")]
+    DeploymentStartFailed,
+    #[serde(alias = "DeploymentStopFailed", alias = "deployment-stop-failed")]
+    DeploymentStopFailed,
+    #[serde(alias = "DeploymentStopped", alias = "deployment-stopped")]
+    DeploymentStopped,
+    #[serde(alias = "All", alias = "ALL")]
     All,
 }
 
 impl WebhookEvent {
     pub fn as_str(&self) -> &'static str {
         match self {
-            WebhookEvent::DeploymentStarted => "deployment_started",
-            WebhookEvent::DeploymentCompleted => "deployment_completed", 
+            WebhookEvent::DeploymentCompleted => "deployment_completed",
             WebhookEvent::DeploymentFailed => "deployment_failed",
             WebhookEvent::DeploymentDeleted => "deployment_deleted",
+            WebhookEvent::DeploymentScaling => "deployment_scaling",
+            WebhookEvent::DeploymentScaled => "deployment_scaled",
+            WebhookEvent::DeploymentScaleFailed => "deployment_scale_failed",
+            WebhookEvent::DeploymentStarted => "deployment_started",
+            WebhookEvent::DeploymentStartFailed => "deployment_start_failed",
+            WebhookEvent::DeploymentStopFailed => "deployment_stop_failed",
+            WebhookEvent::DeploymentStopped => "deployment_stopped",
             WebhookEvent::All => "all",
         }
     }

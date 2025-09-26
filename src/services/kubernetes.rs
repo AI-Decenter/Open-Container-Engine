@@ -1557,4 +1557,235 @@ pub async fn get_deployment_logs_merged(
 
     Ok(all_logs.join("\n"))
 }
+
+    /// Create or update ingress for custom domain with SSL certificate
+    pub async fn create_custom_domain_ingress(
+        &self,
+        deployment_id: &Uuid,
+        domain: &str,
+        certificate_secret_name: &str,
+    ) -> Result<(), AppError> {
+        use k8s_openapi::api::networking::v1::IngressTLS;
+
+        let ingress_name = format!("custom-{}", self.generate_ingress_name(deployment_id));
+        let service_name = self.generate_service_name(deployment_id);
+
+        // Get the deployment to determine the port
+        let deployments: Api<K8sDeployment> = Api::namespaced(self.client.clone(), &self.namespace);
+        let deployment_name = self.generate_deployment_name(deployment_id);
+        
+        let deployment = deployments
+            .get(&deployment_name)
+            .await
+            .map_err(|e| AppError::internal(&format!("Failed to get deployment: {}", e)))?;
+
+        let port = deployment
+            .spec
+            .as_ref()
+            .and_then(|spec| spec.template.spec.as_ref())
+            .and_then(|pod_spec| pod_spec.containers.first())
+            .and_then(|container| container.ports.as_ref())
+            .and_then(|ports| ports.first())
+            .map(|port| port.container_port)
+            .unwrap_or(80);
+
+        let ingress = Ingress {
+            metadata: ObjectMeta {
+                name: Some(ingress_name.clone()),
+                namespace: Some(self.namespace.clone()),
+                labels: Some(BTreeMap::from([
+                    ("app.kubernetes.io/name".to_string(), "custom-domain".to_string()),
+                    ("app.kubernetes.io/managed-by".to_string(), "container-engine".to_string()),
+                    ("container-engine.io/deployment-id".to_string(), deployment_id.to_string()),
+                    ("container-engine.io/custom-domain".to_string(), domain.to_string()),
+                ])),
+                annotations: Some(BTreeMap::from([
+                    ("cert-manager.io/cluster-issuer".to_string(), "letsencrypt-prod".to_string()),
+                    ("nginx.ingress.kubernetes.io/ssl-redirect".to_string(), "true".to_string()),
+                    ("nginx.ingress.kubernetes.io/force-ssl-redirect".to_string(), "true".to_string()),
+                ])),
+                ..Default::default()
+            },
+            spec: Some(IngressSpec {
+                tls: Some(vec![IngressTLS {
+                    hosts: Some(vec![domain.to_string()]),
+                    secret_name: Some(certificate_secret_name.to_string()),
+                }]),
+                rules: Some(vec![IngressRule {
+                    host: Some(domain.to_string()),
+                    http: Some(HTTPIngressRuleValue {
+                        paths: vec![HTTPIngressPath {
+                            path: Some("/".to_string()),
+                            path_type: "Prefix".to_string(),
+                            backend: IngressBackend {
+                                service: Some(IngressServiceBackend {
+                                    name: service_name,
+                                    port: Some(ServiceBackendPort {
+                                        number: Some(port),
+                                        ..Default::default()
+                                    }),
+                                }),
+                                ..Default::default()
+                            },
+                        }],
+                    }),
+                }]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let ingresses: Api<Ingress> = Api::namespaced(self.client.clone(), &self.namespace);
+
+        // Check if ingress already exists and update, otherwise create
+        match ingresses.get(&ingress_name).await {
+            Ok(_) => {
+                ingresses
+                    .replace(&ingress_name, &PostParams::default(), &ingress)
+                    .await
+                    .map_err(|e| AppError::internal(&format!("Failed to update custom domain ingress: {}", e)))?;
+                info!("Updated custom domain ingress: {} for domain: {}", ingress_name, domain);
+            }
+            Err(_) => {
+                ingresses
+                    .create(&PostParams::default(), &ingress)
+                    .await
+                    .map_err(|e| AppError::internal(&format!("Failed to create custom domain ingress: {}", e)))?;
+                info!("Created custom domain ingress: {} for domain: {}", ingress_name, domain);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Create Kubernetes secret for SSL certificate
+    pub async fn create_ssl_certificate_secret(
+        &self,
+        secret_name: &str,
+        certificate_pem: &str,
+        private_key_pem: &str,
+    ) -> Result<(), AppError> {
+        use k8s_openapi::api::core::v1::Secret;
+        use std::collections::BTreeMap;
+
+        let secret = Secret {
+            metadata: ObjectMeta {
+                name: Some(secret_name.to_string()),
+                namespace: Some(self.namespace.clone()),
+                labels: Some(BTreeMap::from([
+                    ("app.kubernetes.io/managed-by".to_string(), "container-engine".to_string()),
+                    ("container-engine.io/certificate-type".to_string(), "ssl".to_string()),
+                ])),
+                ..Default::default()
+            },
+            data: Some(BTreeMap::from([
+                ("tls.crt".to_string(), k8s_openapi::ByteString(certificate_pem.as_bytes().to_vec())),
+                ("tls.key".to_string(), k8s_openapi::ByteString(private_key_pem.as_bytes().to_vec())),
+            ])),
+            type_: Some("kubernetes.io/tls".to_string()),
+            ..Default::default()
+        };
+
+        let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &self.namespace);
+
+        // Check if secret already exists and update, otherwise create
+        match secrets.get(secret_name).await {
+            Ok(_) => {
+                secrets
+                    .replace(secret_name, &PostParams::default(), &secret)
+                    .await
+                    .map_err(|e| AppError::internal(&format!("Failed to update SSL certificate secret: {}", e)))?;
+                info!("Updated SSL certificate secret: {}", secret_name);
+            }
+            Err(_) => {
+                secrets
+                    .create(&PostParams::default(), &secret)
+                    .await
+                    .map_err(|e| AppError::internal(&format!("Failed to create SSL certificate secret: {}", e)))?;
+                info!("Created SSL certificate secret: {}", secret_name);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Remove custom domain ingress
+    pub async fn remove_custom_domain_ingress(
+        &self,
+        deployment_id: &Uuid,
+        domain: &str,
+    ) -> Result<(), AppError> {
+        let ingress_name = format!("custom-{}", self.generate_ingress_name(deployment_id));
+        let ingresses: Api<Ingress> = Api::namespaced(self.client.clone(), &self.namespace);
+
+        match ingresses.delete(&ingress_name, &Default::default()).await {
+            Ok(_) => {
+                info!("Removed custom domain ingress: {} for domain: {}", ingress_name, domain);
+                Ok(())
+            }
+            Err(e) => {
+                if e.to_string().contains("NotFound") {
+                    info!("Custom domain ingress {} already removed", ingress_name);
+                    Ok(())
+                } else {
+                    Err(AppError::internal(&format!("Failed to remove custom domain ingress: {}", e)))
+                }
+            }
+        }
+    }
+
+    /// Remove SSL certificate secret
+    pub async fn remove_ssl_certificate_secret(&self, secret_name: &str) -> Result<(), AppError> {
+        use k8s_openapi::api::core::v1::Secret;
+
+        let secrets: Api<Secret> = Api::namespaced(self.client.clone(), &self.namespace);
+
+        match secrets.delete(secret_name, &Default::default()).await {
+            Ok(_) => {
+                info!("Removed SSL certificate secret: {}", secret_name);
+                Ok(())
+            }
+            Err(e) => {
+                if e.to_string().contains("NotFound") {
+                    info!("SSL certificate secret {} already removed", secret_name);
+                    Ok(())
+                } else {
+                    Err(AppError::internal(&format!("Failed to remove SSL certificate secret: {}", e)))
+                }
+            }
+        }
+    }
+
+    /// Get ingress IP or hostname for DNS configuration
+    pub async fn get_ingress_endpoint(&self) -> Result<String, AppError> {
+        use k8s_openapi::api::core::v1::Service;
+
+        // Try to get the ingress controller service
+        let services: Api<Service> = Api::namespaced(self.client.clone(), "ingress-nginx");
+
+        match services.get("ingress-nginx-controller").await {
+            Ok(service) => {
+                if let Some(status) = service.status {
+                    if let Some(load_balancer) = status.load_balancer {
+                        if let Some(ingress) = load_balancer.ingress {
+                            for ing in ingress {
+                                if let Some(ip) = ing.ip {
+                                    return Ok(ip);
+                                }
+                                if let Some(hostname) = ing.hostname {
+                                    return Ok(hostname);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(AppError::internal("Ingress controller service has no external IP/hostname"))
+            }
+            Err(_) => {
+                // Fallback: try to get from any ingress-nginx service
+                warn!("Could not find ingress-nginx-controller service, using fallback");
+                Ok("127.0.0.1".to_string()) // Fallback for local development
+            }
+        }
+    }
 }

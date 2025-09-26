@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE deployments SET status = 'failed', error_message = 'Failed to queue scale operation' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f4c8eac5661403cd50781fcf994a86928bbff0f879fa67d4f097ada95e0488d"
+}

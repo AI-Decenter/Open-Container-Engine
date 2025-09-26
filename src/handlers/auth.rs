@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     response::Json,
+    http::HeaderMap,
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
@@ -18,6 +19,39 @@ use crate::{
     },
     error::AppError,
 };
+
+// Helper function to get frontend URL from headers or environment
+fn get_frontend_url(headers: &HeaderMap) -> String {
+    // Check if we're in production by looking at production domain env var
+    if let Ok(production_domain) = std::env::var("PRODUCTION_DOMAIN") {
+        // Try to get host from request headers
+        if let Some(host) = headers.get("host") {
+            if let Ok(host_str) = host.to_str() {
+                // If host matches production domain (decenter.run), use it
+                if host_str.contains("decenter.run") {
+                    return production_domain;
+                }
+                // If it's localhost or development, use frontend URL
+                else if host_str.contains("localhost") || host_str.contains("127.0.0.1") {
+                    return std::env::var("FRONTEND_BASE_URL")
+                        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+                }
+                // For other domains (staging, etc), use HTTPS
+                else {
+                    return format!("https://{}", host_str);
+                }
+            }
+        }
+    }
+    
+    // Development fallback: try frontend base URL from env
+    if let Ok(frontend_url) = std::env::var("FRONTEND_BASE_URL") {
+        return frontend_url;
+    }
+    
+    // Final fallback
+    "http://localhost:5173".to_string()
+}
 
 #[utoipa::path(
     post,
@@ -378,6 +412,7 @@ pub async fn revoke_api_key(
 )]
 pub async fn forgot_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> Result<Json<ForgotPasswordResponse>, AppError> {
     payload.validate()?;
@@ -427,15 +462,10 @@ pub async fn forgot_password(
     .await?;
 
     // Send password reset email
-    let reset_url = format!("https://your-domain.com/reset-password?token={}", reset_token);
+    let frontend_base_url = get_frontend_url(&headers);
+    let reset_url = format!("{}/reset-password?token={}", frontend_base_url, reset_token);
     
-    // Temporarily use console logging instead of real email for demo
-    tracing::info!("=== PASSWORD RESET EMAIL (DEMO) ===");
-    tracing::info!("To: {} <{}>", user.username, user.email);
-    tracing::info!("Subject: Password Reset Request");
-    tracing::info!("Reset URL: {}", reset_url);
-    tracing::info!("Reset Token: {}", reset_token);
-    tracing::info!("================================");
+    // Send password reset email
     
     if let Err(e) = state.email_service.send_password_reset_email(&user.email, &user.username, &reset_token, &reset_url) {
         tracing::error!("Failed to send password reset email: {}", e);
@@ -519,3 +549,4 @@ pub async fn reset_password(
         message: "Password has been reset successfully".to_string(),
     }))
 }
+

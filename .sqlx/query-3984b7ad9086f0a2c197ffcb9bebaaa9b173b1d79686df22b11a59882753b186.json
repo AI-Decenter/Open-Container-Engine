@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE deployments SET status = 'failed', error_message = 'Failed to queue start operation' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3984b7ad9086f0a2c197ffcb9bebaaa9b173b1d79686df22b11a59882753b186"
+}
