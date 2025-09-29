@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE domains SET status = 'failed', error_message = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7aba2ba7b5758ffd5376d02f4d57fb02bbf2abe7732d6bc0c1ee63b1fb719ae0"
+}

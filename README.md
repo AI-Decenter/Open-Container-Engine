@@ -22,6 +22,236 @@
 
 ---
 
+## 🚀 Quick Start Guide
+
+### Prerequisites
+
+Before getting started, ensure you have the following installed:
+
+- **Docker** - For containerization
+- **Docker Compose** - For managing multi-container applications
+- **Minikube** - Local Kubernetes cluster
+- **kubectl** - Kubernetes command-line tool
+- **Node.js** (v16+) - For the frontend application
+- **Rust** (latest stable) - For the backend
+- **PostgreSQL** - Database (can be run via Docker Compose)
+- **Redis** - For caching (can be run via Docker Compose)
+
+### Installation & Setup
+
+#### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/secus217/Open-Container-Engine.git
+cd Open-Container-Engine
+```
+
+#### Step 2: Initial Setup
+
+Run the setup script to install dependencies and configure the environment:
+
+```bash
+./setup.sh setup
+```
+
+This command will:
+- Install required system dependencies
+- Set up Rust toolchain
+- Install Node.js dependencies for the frontend
+- Configure Docker and Docker Compose
+- Set up PostgreSQL and Redis via Docker Compose
+- Initialize the database schema
+
+#### Step 3: Configure Kubernetes
+
+Create the Kubernetes configuration file by copying from the test template:
+
+```bash
+cp k8sConfigTest.yaml k8sConfig.yaml
+```
+
+Edit `k8sConfig.yaml` and replace the paths with your actual system paths:
+
+```yaml
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /home/YOUR_USERNAME/.minikube/ca.crt
+    server: https://192.168.49.2:8443
+  name: minikube
+contexts:
+- context:
+    cluster: minikube
+    namespace: default
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+users:
+- name: minikube
+  user:
+    client-certificate: /home/YOUR_USERNAME/.minikube/profiles/minikube/client.crt
+    client-key: /home/YOUR_USERNAME/.minikube/profiles/minikube/client.key
+```
+
+#### Step 4: Environment Configuration
+
+Create your local environment configuration:
+
+```bash
+cp .env.development .env.local
+```
+
+Edit `.env.local` to match your local setup:
+
+```bash
+# Development environment configuration for Container Engine
+DATABASE_URL=postgresql://postgres:password@localhost:5432/container_engine
+REDIS_URL=redis://localhost:6379
+PORT=3000
+JWT_SECRET=your-secure-jwt-secret-for-development
+JWT_EXPIRES_IN=3600
+API_KEY_PREFIX=ce_dev_
+KUBERNETES_NAMESPACE=container-engine-dev
+DOMAIN_SUFFIX=.local.dev
+MAILTRAP_SMTP_HOST=your_host
+MAILTRAP_SMTP_PORT=587
+MAILTRAP_USERNAME=your_mailtrap_username
+MAILTRAP_PASSWORD=your_mailtrap_password
+EMAIL_FROM=noreply@containerengine.local
+EMAIL_FROM_NAME=Container Engine Dev
+RUST_LOG=container_engine=debug,tower_http=debug
+KUBECONFIG_PATH=./k8sConfig.yaml
+```
+
+#### Step 5: Start Minikube & Enable Ingress
+
+Start your local Kubernetes cluster:
+
+```bash
+# Start Minikube
+minikube start
+
+# Enable the ingress addon
+minikube addons enable ingress
+
+# Verify Minikube is running
+minikube status
+```
+
+#### Step 6: Run the Development Environment
+
+Start all services in development mode:
+
+```bash
+./setup.sh dev
+```
+
+This command will:
+- Start PostgreSQL and Redis containers
+- Run database migrations
+- Start the Rust backend server
+- Start the React frontend development server
+- Set up Kubernetes resources
+- Open your browser to `http://localhost:3000`
+
+### 🎯 Accessing the Application
+
+Once the setup is complete, you can access:
+
+- **Frontend Application**: http://localhost:3000
+- **Backend API**: http://localhost:8080
+- **API Documentation**: http://localhost:8080/docs
+- **Database**: localhost:5432 (postgres/password)
+- **Redis**: localhost:6379
+
+### 🔧 Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `./setup.sh setup` | Initial project setup and dependency installation |
+| `./setup.sh dev` | Start development environment |
+| `./setup.sh build` | Build the project for production |
+| `./setup.sh test` | Run all tests |
+| `./setup.sh clean` | Clean build artifacts and docker containers |
+| `./setup.sh logs` | View application logs |
+
+### 🐛 Troubleshooting
+
+#### Common Issues
+
+**1. Minikube not starting:**
+```bash
+# Reset Minikube if it fails to start
+minikube delete
+minikube start --driver=docker
+```
+
+**2. Port already in use:**
+```bash
+# Check which process is using port 3000 or 8080
+sudo lsof -i :3000
+sudo lsof -i :8080
+
+# Kill the process if needed
+sudo kill -9 <PID>
+```
+
+**3. Database connection errors:**
+```bash
+# Restart PostgreSQL container
+docker-compose restart postgres
+
+# Check database logs
+docker-compose logs postgres
+```
+
+**4. Kubernetes configuration issues:**
+```bash
+# Verify Minikube status
+minikube status
+
+# Check Kubernetes cluster info
+kubectl cluster-info
+
+# Verify ingress is enabled
+minikube addons list | grep ingress
+```
+
+**5. Frontend build errors:**
+```bash
+# Clear npm cache and reinstall
+cd apps/container-engine-frontend
+rm -rf node_modules package-lock.json
+npm install
+```
+
+#### Getting Help
+
+- Check the [Issues](https://github.com/secus217/Open-Container-Engine/issues) page for known problems
+- Review application logs: `./setup.sh logs`
+- Ensure all prerequisites are correctly installed
+- Verify that all ports (3000, 8080, 5432, 6379) are available
+
+### 📁 Project Structure
+
+```
+Open-Container-Engine/
+├── apps/
+│   └── container-engine-frontend/     # React frontend application
+├── src/                               # Rust backend source code
+├── migrations/                        # Database migration files
+├── tests/                            # Integration tests
+├── scripts/                          # Setup and utility scripts
+├── k8sConfig.yaml                    # Kubernetes configuration
+├── .env.local                        # Local environment variables
+├── docker-compose.yml                # Docker services configuration
+├── setup.sh                         # Main setup script
+└── README.md                         # This file
+```
+
+---
+
 ## Introduction
 
 **Container Engine** is an open-source alternative to Google Cloud Run, built with Rust and the Axum framework. This revolutionary service empowers developers to effortlessly deploy containerized applications to the internet with unprecedented simplicity and speed. By intelligently abstracting away the complexity of Kubernetes infrastructure, Container Engine creates a seamless deployment experience that lets you focus entirely on your code and business logic, not on managing infrastructure.

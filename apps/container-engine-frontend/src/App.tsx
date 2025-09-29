@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import LandingPage from './pages/LandingPage';
 import AuthPage from './pages/AuthPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import DeploymentsPage from './pages/DeploymentsPage';
 import NewDeploymentPage from './pages/NewDeploymentPage';
@@ -30,6 +31,7 @@ function App() {
             <Routes>
               <Route path="/" element={<LandingPage />} /> 
               <Route path="/auth" element={<AuthPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/features" element={<FeaturesPage />} />
               <Route path="/documentation" element={<DocumentationPage />} />
               <Route path="/privacy" element={<PrivacyPolicyPage />} />

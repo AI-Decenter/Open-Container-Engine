@@ -1,6 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
     response::Json,
+    http::HeaderMap,
 };
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
@@ -18,6 +19,11 @@ use crate::{
     },
     error::AppError,
 };
+
+// Helper function to get frontend URL - always return production domain
+fn get_frontend_url(_headers: &HeaderMap) -> String {
+    "https://decenter.run".to_string()
+}
 
 #[utoipa::path(
     post,
@@ -378,6 +384,7 @@ pub async fn revoke_api_key(
 )]
 pub async fn forgot_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> Result<Json<ForgotPasswordResponse>, AppError> {
     payload.validate()?;
@@ -427,15 +434,13 @@ pub async fn forgot_password(
     .await?;
 
     // Send password reset email
-    let reset_url = format!("https://your-domain.com/reset-password?token={}", reset_token);
+    let frontend_base_url = get_frontend_url(&headers);
+    let reset_url = format!("{}/reset-password?token={}", frontend_base_url, reset_token);
     
-    // Temporarily use console logging instead of real email for demo
-    tracing::info!("=== PASSWORD RESET EMAIL (DEMO) ===");
-    tracing::info!("To: {} <{}>", user.username, user.email);
-    tracing::info!("Subject: Password Reset Request");
-    tracing::info!("Reset URL: {}", reset_url);
-    tracing::info!("Reset Token: {}", reset_token);
-    tracing::info!("================================");
+    // Log for debugging
+    tracing::info!("Generated password reset URL: {} for user: {}", reset_url, user.email);
+    
+    // Send password reset email
     
     if let Err(e) = state.email_service.send_password_reset_email(&user.email, &user.username, &reset_token, &reset_url) {
         tracing::error!("Failed to send password reset email: {}", e);
@@ -519,3 +524,4 @@ pub async fn reset_password(
         message: "Password has been reset successfully".to_string(),
     }))
 }
+

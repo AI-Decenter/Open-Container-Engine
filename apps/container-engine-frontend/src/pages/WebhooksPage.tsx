@@ -26,6 +26,12 @@ const WEBHOOK_EVENTS = [
   { value: 'deployment_completed', label: 'Deployment Completed', description: 'When a deployment finishes successfully' },
   { value: 'deployment_failed', label: 'Deployment Failed', description: 'When a deployment fails' },
   { value: 'deployment_deleted', label: 'Deployment Deleted', description: 'When a deployment is deleted' },
+  { value: 'deployment_scaling', label: 'Deployment Scaling', description: 'When a deployment is being scaled' },
+  { value: 'deployment_scaled', label: 'Deployment Scaled', description: 'When a deployment scaling is completed' },
+  { value: 'deployment_scale_failed', label: 'Deployment Scale Failed', description: 'When a deployment scaling fails' },
+  { value: 'deployment_start_failed', label: 'Deployment Start Failed', description: 'When starting a deployment fails' },
+  { value: 'deployment_stop_failed', label: 'Deployment Stop Failed', description: 'When stopping a deployment fails' },
+  { value: 'deployment_stopped', label: 'Deployment Stopped', description: 'When a deployment is stopped' },
   { value: 'all', label: 'All Events', description: 'Subscribe to all webhook events' },
 ];
 
@@ -37,7 +43,7 @@ export default function WebhooksPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingWebhook, setEditingWebhook] = useState<Webhook | null>(null);
   const [testingWebhook, setTestingWebhook] = useState<string | null>(null);
-    
+
   // Create/Edit form state
   const [formData, setFormData] = useState<CreateWebhookRequest>({
     name: '',
@@ -108,7 +114,7 @@ export default function WebhooksPage() {
 
   const handleDeleteWebhook = async (id: string) => {
     if (!confirm('Are you sure you want to delete this webhook?')) return;
-    
+
     try {
       await webhookService.deleteWebhook(id);
       await loadWebhooks();
@@ -186,9 +192,9 @@ export default function WebhooksPage() {
 
   return (
     <DashboardLayout>
-  <div className="max-w-6xl mx-auto px-2 xs:px-3 sm:px-4 md:px-6 lg:px-8 w-full">
+      <div className="max-w-6xl mx-auto px-2 xs:px-3 sm:px-4 md:px-6 lg:px-8 w-full">
         {/* Header */}
-  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-3 sm:gap-0">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-3 sm:gap-0">
           <div className="w-full sm:w-auto">
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Webhooks</h1>
             <p className="mt-1 sm:mt-2 text-gray-600 text-sm sm:text-base">Manage your deployment notification webhooks</p>
@@ -221,7 +227,7 @@ export default function WebhooksPage() {
         )}
 
         {/* Webhooks List */}
-  <div className="bg-white shadow rounded-lg overflow-x-auto w-full">
+        <div className="bg-white shadow rounded-lg overflow-x-auto w-full">
           {webhooks.length === 0 ? (
             <div className="text-center py-12">
               <Globe className="mx-auto h-12 w-12 text-gray-400" />
@@ -256,16 +262,15 @@ export default function WebhooksPage() {
                             <h3 className="font-medium text-gray-900 truncate max-w-[120px] xs:max-w-[160px] sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-2xl">
                               {webhook.name}
                             </h3>
-                            <span className={`mt-1 sm:mt-0 sm:ml-2 px-2 py-1 text-xs rounded-full ${
-                              webhook.is_active 
-                                ? 'bg-green-100 text-green-800' 
+                            <span className={`mt-1 sm:mt-0 sm:ml-2 px-2 py-1 text-xs rounded-full ${webhook.is_active
+                                ? 'bg-green-100 text-green-800'
                                 : 'bg-red-100 text-red-800'
-                            }`}>
+                              }`}>
                               {webhook.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </div>
                           <div className="mt-1">
-                            <p className="break-all max-w-full whitespace-pre-line text-xs sm:text-sm" style={{wordBreak: 'break-all'}}>
+                            <p className="break-all max-w-full whitespace-pre-line text-xs sm:text-sm" style={{ wordBreak: 'break-all' }}>
                               {webhook.url}
                             </p>
                             <p className="text-xs sm:text-sm text-gray-500">

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use super::models::{Notification, NotificationType, WebSocketMessage};
 
@@ -49,15 +49,15 @@ impl NotificationManager {
         
         if let Some(tx) = connections.get(&user_id) {
             match tx.send(message.clone()) {
-                Ok(receiver_count) => {
-                    debug!("Sent notification to user {} ({} receivers)", user_id, receiver_count);
+                Ok(_receiver_count) => {
+                    // Notification sent successfully
                 }
                 Err(e) => {
                     error!("Failed to send notification to user {}: {}", user_id, e);
                 }
             }
         } else {
-            debug!("No active connection for user {}, notification not sent", user_id);
+            // No active connection for user, notification not sent
         }
     }
 

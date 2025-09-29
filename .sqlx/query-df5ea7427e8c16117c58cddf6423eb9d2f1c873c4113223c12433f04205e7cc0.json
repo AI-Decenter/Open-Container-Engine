@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE domains \n        SET status = 'verified', verified_at = NOW(), ssl_status = 'issued', ssl_issued_at = $1, ssl_expires_at = $2\n        WHERE id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df5ea7427e8c16117c58cddf6423eb9d2f1c873c4113223c12433f04205e7cc0"
+}

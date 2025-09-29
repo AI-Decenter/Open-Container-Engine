@@ -56,12 +56,22 @@ interface DeploymentLogs {
   message: string;
 }
 
+interface DomainItem {
+  id: string;
+  domain: string;
+  status: 'pending' | 'validating' | 'verified' | 'failed';
+  created_at: string;
+  verified_at?: string;
+  ssl_status?: 'pending' | 'issued' | 'failed';
+  ssl_expires_at?: string;
+}
+
 const DeploymentDetailPage: React.FC = () => {
   const { deploymentId } = useParams<{ deploymentId: string }>();
-  
+  const domainComingSoon = true; // Set to true to hide Domains tab for now
   const navigate = useNavigate();
   const [deployment, setDeployment] = useState<DeploymentDetails | null>(null);
-  const [ logs,setLogs] = useState<DeploymentLogs[]>([]);
+  const [logs, setLogs] = useState<DeploymentLogs[]>([]);
   console.log(logs);
 
   const [loading, setLoading] = useState(true);
@@ -122,21 +132,21 @@ const DeploymentDetailPage: React.FC = () => {
   useEffect(() => {
     const handleNotification = (message: WebSocketMessage) => {
       console.log("Received WebSocket message:", message);
-      
+
       // Parse the notification data
       let isForCurrentDeployment = false;
       let notificationData: any = null;
-      
+
       try {
         // Backend sends nested data structure: message.data.data contains actual notification data
         const messageType = message.type;
         notificationData = message.data.data; // Access nested data
-        
+
         console.log("Message type:", messageType);
         console.log("Message data:", notificationData);
-        
+
         // Check if this notification is for the current deployment
-        isForCurrentDeployment = 
+        isForCurrentDeployment =
           (messageType === 'deployment_status_changed' && notificationData.deployment_id === deploymentId) ||
           (messageType === 'deployment_scaled' && notificationData.deployment_id === deploymentId) ||
           (messageType === 'deployment_created' && notificationData.deployment_id === deploymentId) ||
@@ -308,6 +318,288 @@ const DeploymentDetailPage: React.FC = () => {
     </button>
   );
 
+  const DomainsTab: React.FC<{ deploymentId: string | undefined; showToast: (message: string, type?: 'success' | 'error') => void }> = ({ deploymentId, showToast }) => {
+    const [domains, setDomains] = useState<DomainItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [addingDomain, setAddingDomain] = useState(false);
+    const [newDomain, setNewDomain] = useState('');
+    const [showAddForm, setShowAddForm] = useState(false);
+
+    const fetchDomains = useCallback(async () => {
+      if (!deploymentId) return;
+      try {
+        setLoading(true);
+        const response = await api.get(`/v1/deployments/${deploymentId}/domains`);
+        setDomains(response.data.domains || []);
+      } catch (err: any) {
+        console.error('Failed to fetch domains:', err);
+        setDomains([]);
+      } finally {
+        setLoading(false);
+      }
+    }, [deploymentId]);
+
+    useEffect(() => {
+      fetchDomains();
+
+      // Poll for domain status updates every 10 seconds
+      const pollInterval = setInterval(() => {
+        fetchDomains();
+      }, 10000);
+
+      return () => clearInterval(pollInterval);
+    }, [fetchDomains]);
+
+    const handleAddDomain = async () => {
+      if (!newDomain.trim() || !deploymentId) return;
+
+      try {
+        setAddingDomain(true);
+        await api.post(`/v1/deployments/${deploymentId}/domains`, {
+          domain: newDomain.trim()
+        });
+        showToast('Domain added successfully! SSL certificate provisioning will begin shortly.', 'success');
+        setNewDomain('');
+        setShowAddForm(false);
+        fetchDomains();
+      } catch (err: any) {
+        showToast(err.response?.data?.error?.message || 'Failed to add domain', 'error');
+      } finally {
+        setAddingDomain(false);
+      }
+    };
+
+    const handleRemoveDomain = async (domainId: string, domainName: string) => {
+      if (!window.confirm(`Are you sure you want to remove domain "${domainName}"?`)) {
+        return;
+      }
+
+      try {
+        await api.delete(`/v1/deployments/${deploymentId}/domains/${domainId}`);
+        showToast('Domain removed successfully', 'success');
+        fetchDomains();
+      } catch (err: any) {
+        showToast(err.response?.data?.error?.message || 'Failed to remove domain', 'error');
+      }
+    };
+
+    const getStatusColor = (status: string) => {
+      switch (status) {
+        case 'verified': return 'text-green-700 bg-green-100 border-green-200';
+        case 'pending': return 'text-yellow-700 bg-yellow-100 border-yellow-200';
+        case 'validating': return 'text-blue-700 bg-blue-100 border-blue-200';
+        case 'failed': return 'text-red-700 bg-red-100 border-red-200';
+        default: return 'text-gray-700 bg-gray-100 border-gray-200';
+      }
+    };
+
+    const getStatusIcon = (status: string) => {
+      switch (status) {
+        case 'verified': return <CheckCircleIcon className="h-4 w-4" />;
+        case 'pending': return <ClockIcon className="h-4 w-4" />;
+        case 'validating': return <ArrowPathIcon className="h-4 w-4 animate-spin" />;
+        case 'failed': return <ExclamationTriangleIcon className="h-4 w-4" />;
+        default: return <ClockIcon className="h-4 w-4" />;
+      }
+    };
+
+    return (
+      <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mr-4">
+              <GlobeAltIcon className="h-6 w-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Custom Domains</h2>
+              <p className="text-gray-600">Manage custom domains with automated SSL certificates</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-medium"
+          >
+            <PlusIcon className="h-5 w-5 mr-2" />
+            Add Domain
+          </button>
+        </div>
+
+        {/* Add Domain Form */}
+        {showAddForm && (
+          <div className="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Custom Domain</h3>
+            <div className="flex items-center space-x-4">
+              <input
+                type="text"
+                placeholder="example.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onKeyPress={(e) => e.key === 'Enter' && handleAddDomain()}
+              />
+              <button
+                onClick={handleAddDomain}
+                disabled={addingDomain || !newDomain.trim()}
+                className="px-6 py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:bg-gray-400 transition-all font-medium"
+              >
+                {addingDomain ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 mr-2 animate-spin inline" />
+                    Adding...
+                  </>
+                ) : (
+                  'Add Domain'
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddForm(false);
+                  setNewDomain('');
+                }}
+                className="px-6 py-3 text-gray-600 hover:text-gray-800 transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mt-2">
+              Make sure your domain points to your deployment URL before adding it.
+            </p>
+          </div>
+        )}
+
+        {/* Domains List */}
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading domains...</p>
+          </div>
+        ) : domains.length > 0 ? (
+          <div className="space-y-4">
+            {domains.map((domain) => (
+              <div key={domain.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-gray-300 transition-all">
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <GlobeAltIcon className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{domain.domain}</h3>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className={`flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(domain.status)}`}>
+                        {getStatusIcon(domain.status)}
+                        <span className="ml-1 capitalize">{domain.status}</span>
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        Added {formatDate(domain.created_at)}
+                      </span>
+                      {domain.verified_at && (
+                        <span className="text-xs text-green-600">
+                          Verified {formatDate(domain.verified_at)}
+                        </span>
+                      )}
+                      {domain.ssl_status && (
+                        <span className={`text-xs ${domain.ssl_status === 'issued' ? 'text-green-600' : 'text-gray-500'}`}>
+                          SSL: {domain.ssl_status}
+                        </span>
+                      )}
+                      {domain.ssl_expires_at && (
+                        <span className="text-xs text-gray-500">
+                          SSL expires {formatDate(domain.ssl_expires_at)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {domain.status === 'verified' && (
+                    <button
+                      onClick={() => window.open(`https://${domain.domain}`, '_blank')}
+                      className="p-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-all"
+                    >
+                      <EyeIcon className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemoveDomain(domain.id, domain.domain)}
+                    className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-all"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <GlobeAltIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No Custom Domains</h3>
+            <p className="text-gray-600 mb-6">Add custom domains to access your deployment with your own domain name.</p>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-medium"
+            >
+              <PlusIcon className="h-5 w-5 mr-2" />
+              Add Your First Domain
+            </button>
+          </div>
+        )}
+
+        {/* Information Panel */}
+        <div className="mt-8 space-y-4">
+          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <h4 className="font-semibold text-gray-900 mb-2">Step-by-Step DNS Setup</h4>
+            <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside">
+              <li><strong>Get IP Address:</strong> Run <code className="bg-gray-200 px-1 rounded">nslookup demo-deployment-dc7c4d37.vinhomes.co.uk</code></li>
+              <li><strong>Login to Domain Provider:</strong> GoDaddy, Namecheap, Cloudflare, etc.</li>
+              <li><strong>Find DNS Management:</strong> Look for "DNS", "DNS Records", or "Advanced DNS"</li>
+              <li><strong>Add A Record:</strong> Point root domain (@) to the IP address</li>
+              <li><strong>Add CNAME Record:</strong> Point www to your root domain</li>
+              <li><strong>Save Changes:</strong> DNS propagation takes 5-30 minutes</li>
+            </ol>
+            <div className="mt-3 p-2 bg-blue-100 rounded">
+              <p className="text-xs text-blue-800">
+                🔒 SSL certificates are automatically provisioned using Let's Encrypt after DNS verification
+              </p>
+            </div>
+          </div>
+
+          {deployment && (
+            <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+              <h4 className="font-semibold text-blue-900 mb-2">DNS Configuration Required</h4>
+              <p className="text-sm text-blue-700 mb-2">
+                Add these DNS records to your domain provider (GoDaddy, Namecheap, Cloudflare, etc.):
+              </p>
+              <div className="space-y-3">
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-sm font-semibold text-gray-700 mb-1">A Record (Root Domain):</div>
+                  <div className="text-sm font-mono space-y-1">
+                    <div>Type: <span className="text-blue-600">A</span></div>
+                    <div>Name: <span className="text-blue-600">@</span> (or leave blank)</div>
+                    <div>Value: <span className="text-green-600">Get IP from: {deployment.url.replace('https://', '').replace('http://', '')}</span></div>
+                    <div>TTL: <span className="text-blue-600">300</span></div>
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded border">
+                  <div className="text-sm font-semibold text-gray-700 mb-1">CNAME Record (WWW Subdomain):</div>
+                  <div className="text-sm font-mono space-y-1">
+                    <div>Type: <span className="text-blue-600">CNAME</span></div>
+                    <div>Name: <span className="text-blue-600">www</span></div>
+                    <div>Value: <span className="text-green-600">your-domain.com</span> (without www)</div>
+                    <div>TTL: <span className="text-blue-600">300</span></div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 p-2 bg-yellow-100 rounded border border-yellow-300">
+                <p className="text-xs text-yellow-800">
+                  💡 <strong>Tip:</strong> Use <code>nslookup {deployment.url.replace('https://', '').replace('http://', '')}</code> to get the IP address
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <DashboardLayout>
       <div className="min-h-screen bg-linear-to-br from-blue-50 via-white to-purple-50">
@@ -369,8 +661,8 @@ const DeploymentDetailPage: React.FC = () => {
                   <EyeIcon className="h-5 w-5 mr-2" />
                   View Live
                 </button>
-              
-                <button 
+
+                <button
                   onClick={handleDeleteDeployment}
                   className="flex items-center px-4 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-xl transition-all"
                 >
@@ -611,27 +903,59 @@ const DeploymentDetailPage: React.FC = () => {
             )}
 
             {activeTab === 'domains' && (
-              <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
-                <div className="flex items-center mb-6">
-                  <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mr-4">
-                    <GlobeAltIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">Custom Domains</h2>
-                    <p className="text-gray-600">Manage custom domains for your deployment</p>
+              domainComingSoon ? (
+                <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
+                  <div className="text-center py-16">
+                    <div className="relative">
+                      <GlobeAltIcon className="h-24 w-24 text-gray-300 mx-auto mb-6" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
+                          <ClockIcon className="h-5 w-5 text-yellow-600" />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <h3 className="text-2xl font-bold text-gray-900 mb-3">Custom Domains Coming Soon!</h3>
+                    <p className="text-gray-600 mb-6 max-w-md mx-auto">
+                      We're working hard to bring you custom domain management with automated DNS validation and Let's Encrypt SSL certificates.
+                    </p>
+                    
+                    <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-6 max-w-lg mx-auto">
+                      <h4 className="text-lg font-semibold text-gray-900 mb-3">✨ What's Coming</h4>
+                      <ul className="text-sm text-gray-700 space-y-2 text-left">
+                        <li className="flex items-center">
+                          <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          <span>One-click domain setup</span>
+                        </li>
+                        <li className="flex items-center">
+                          <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          <span>Automatic DNS validation</span>
+                        </li>
+                        <li className="flex items-center">
+                          <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          <span>Free SSL certificates via Let's Encrypt</span>
+                        </li>
+                        <li className="flex items-center">
+                          <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          <span>Real-time certificate renewal</span>
+                        </li>
+                        <li className="flex items-center">
+                          <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                          <span>Multi-domain support</span>
+                        </li>
+                      </ul>
+                    </div>
+                    
+                    <div className="mt-8 p-4 bg-blue-50 rounded-xl border border-blue-200 max-w-lg mx-auto">
+                      <p className="text-sm text-blue-700">
+                        <span className="font-semibold">🚀 Stay tuned!</span> This feature is currently in development and will be available in an upcoming release.
+                      </p>
+                    </div>
                   </div>
                 </div>
-
-                <div className="text-center py-12">
-                  <GlobeAltIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Custom Domains Coming Soon</h3>
-                  <p className="text-gray-600 mb-6">You'll be able to add and manage custom domains for your deployments.</p>
-                  <div className="inline-flex items-center px-4 py-2 bg-gray-100 rounded-xl text-gray-700">
-                    <ClockIcon className="h-5 w-5 mr-2" />
-                    Feature in development
-                  </div>
-                </div>
-              </div>
+              ) : (
+                <DomainsTab deploymentId={deploymentId} showToast={showToast} />
+              )
             )}
 
             {activeTab === 'settings' && (

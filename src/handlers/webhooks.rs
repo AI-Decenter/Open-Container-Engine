@@ -5,7 +5,7 @@ use axum::{
 use chrono::Utc;
 use serde_json::{json, Value};
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::error;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -21,7 +21,7 @@ pub async fn create_webhook(
     user: AuthUser,
     Json(payload): Json<CreateWebhookRequest>,
 ) -> Result<Json<WebhookResponse>, AppError> {
-    tracing::info!("Creating webhook for user {}: {:?}", user.user_id, payload);
+    // Creating webhook for user
     
     // Validate the payload
     let validation_result = payload.validate();
@@ -29,7 +29,7 @@ pub async fn create_webhook(
         tracing::error!("Validation failed: {:?}", e);
         return Err(AppError::bad_request(&format!("Validation error: {}", e)));
     }
-    tracing::info!("Validation passed for webhook creation");
+    // Validation passed for webhook creation
 
     // Check if webhook name already exists for this user
     let existing = sqlx::query!(
@@ -68,10 +68,7 @@ pub async fn create_webhook(
     .execute(&state.db.pool)
     .await?;
 
-    info!(
-        "User {} created webhook: {} -> {}",
-        user.user_id, payload.name, payload.url
-    );
+    // Webhook created successfully
 
     Ok(Json(WebhookResponse {
         id: webhook_id,
@@ -151,7 +148,7 @@ pub async fn update_webhook(
     payload.validate()?;
 
     // Check if webhook exists
-    let existing = sqlx::query!(
+    let _existing = sqlx::query!(
         "SELECT id FROM user_webhooks WHERE id = $1 AND user_id = $2",
         webhook_id,
         user.user_id
@@ -239,7 +236,7 @@ pub async fn delete_webhook(
         return Err(AppError::not_found("Webhook"));
     }
 
-    info!("User {} deleted webhook: {}", user.user_id, webhook_id);
+    // User deleted webhook
 
     Ok(Json(json!({
         "message": "Webhook deleted successfully",

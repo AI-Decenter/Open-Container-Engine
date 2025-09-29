@@ -10,7 +10,7 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::error;
 use uuid::Uuid;
 
 use crate::auth::middleware::verify_api_key;
@@ -29,7 +29,7 @@ pub struct LogsQuery {
 pub struct LogsResponse {
     pub logs: String,
 }
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize,Clone)]
 pub struct PodInfo {
     pub name: String,
     pub status: String,
@@ -58,7 +58,7 @@ pub async fn get_deployment_pods(
     Path(deployment_id): Path<Uuid>,
     user: AuthUser,
 ) -> Result<Json<PodsResponse>, AppError> {
-    info!("Getting pods for deployment: {} (user: {})", deployment_id, user.user_id);
+    // Getting pods for deployment
     
     // Verify deployment ownership
     if !verify_deployment_ownership(&state, deployment_id, user.user_id).await? {
@@ -68,7 +68,7 @@ pub async fn get_deployment_pods(
 
     let k8s_service = KubernetesService::for_deployment(&deployment_id, &user.user_id).await?;
 
-    let k8s_pods = k8s_service.get_deployment_pods(&deployment_id).await?;
+    let k8s_pods: Vec<crate::services::kubernetes::PodInfo> = k8s_service.get_deployment_pods(&deployment_id).await?;
     
     // Convert from k8s PodInfo to our response PodInfo
     let pods: Vec<PodInfo> = k8s_pods.into_iter().map(|pod| PodInfo {
@@ -80,17 +80,47 @@ pub async fn get_deployment_pods(
         created_at: pod.created_at,
     }).collect();
 
-    info!("Found {} pods for deployment {}", pods.len(), deployment_id);
+    // Found pods for deployment
     Ok(Json(PodsResponse { pods }))
 }
+
+/// Get all pods for deployment including terminating ones (for debugging)
+pub async fn get_deployment_pods_debug(
+    State(state): State<AppState>,
+    Path(deployment_id): Path<Uuid>,
+    user: AuthUser,
+) -> Result<Json<PodsResponse>, AppError> {
+    // Verify deployment ownership
+    if !verify_deployment_ownership(&state, deployment_id, user.user_id).await? {
+        error!("User {} does not own deployment {}", user.user_id, deployment_id);
+        return Err(AppError::not_found("Deployment not found"));
+    }
+
+    let k8s_service = KubernetesService::for_deployment(&deployment_id, &user.user_id).await?;
+
+    let k8s_pods: Vec<crate::services::kubernetes::PodInfo> = k8s_service.get_deployment_pods_all(&deployment_id).await?;
+    
+    // Convert from k8s PodInfo to our response PodInfo
+    let pods: Vec<PodInfo> = k8s_pods.into_iter().map(|pod| PodInfo {
+        name: pod.name,
+        status: pod.status,
+        ready: pod.ready,
+        restart_count: pod.restart_count,
+        node_name: pod.node_name,
+        created_at: pod.created_at,
+    }).collect();
+
+    // Found all pods for deployment (including terminating)
+    Ok(Json(PodsResponse { pods }))
+}
+
 pub async fn get_pod_logs(
     State(state): State<AppState>,
     Path((deployment_id, pod_name)): Path<(Uuid, String)>,
     Query(query): Query<LogsQuery>,
     user: AuthUser,
 ) -> Result<axum::response::Json<LogsResponse>, AppError> {
-    info!("Getting logs for pod: {} in deployment: {} (user: {})", 
-          pod_name, deployment_id, user.user_id);
+    // Getting logs for pod
 
     // Verify deployment ownership
     if !verify_deployment_ownership(&state, deployment_id, user.user_id).await? {
@@ -103,7 +133,7 @@ pub async fn get_pod_logs(
     // Get the logs from the specific pod
     let logs = k8s_service.get_pod_logs(&pod_name, query.tail).await?;
 
-    info!("Retrieved logs for pod {} in deployment {}", pod_name, deployment_id);
+    // Retrieved logs for pod
     
     Ok(axum::response::Json(LogsResponse { logs }))
 }
@@ -197,10 +227,7 @@ async fn handle_socket_with_user_internal(
         .await
     {
         Ok(mut log_stream) => {
-            info!(
-                "Started log stream for deployment: {} (user: {})",
-                deployment_id, user_id
-            );
+            // Started log stream for deployment
 
             // Send initial logs from stream
             let mut line_count = 0;
@@ -245,7 +272,7 @@ async fn handle_socket_with_user_internal(
                 .send(Message::Text("Log stream ended".to_string()))
                 .await;
             let _ = sender.send(Message::Close(None)).await;
-            info!("Log stream ended for deployment: {}", deployment_id);
+            // Log stream ended for deployment
         }
         Err(e) => {
             error!("Failed to start log stream: {}", e);
@@ -270,7 +297,7 @@ async fn authenticate_websocket_user(
     let user_id = if token.starts_with(&state.config.api_key_prefix) {
         // API Key authentication
         let user_id = verify_api_key(&state, &token).await?;
-        info!("API key authenticated for user {}", user_id);
+        // API key authenticated
         user_id
     } else {
         // JWT token authentication
@@ -285,7 +312,7 @@ async fn authenticate_websocket_user(
             AppError::auth("Invalid token format")
         })?;
 
-        info!("JWT authenticated for user {}", user_id);
+        // JWT authenticated
         user_id
     };
 
@@ -303,7 +330,7 @@ async fn authenticate_websocket_user(
 
     match user_exists {
         Some(_) => {
-            info!("User {} authenticated successfully for WebSocket", user_id);
+            // User authenticated successfully
             Ok(user_id)
         }
         None => {
@@ -454,10 +481,7 @@ async fn handle_pod_socket_with_user_internal(
         .await
     {
         Ok(mut log_stream) => {
-            info!(
-                "Started log stream for pod: {} in deployment: {} (user: {})",
-                pod_name, deployment_id, user_id
-            );
+            // Started log stream for pod
 
             // Send initial logs from stream
             let mut line_count = 0;
@@ -502,7 +526,7 @@ async fn handle_pod_socket_with_user_internal(
                 .send(Message::Text(format!("Log stream ended for pod: {}", pod_name)))
                 .await;
             let _ = sender.send(Message::Close(None)).await;
-            info!("Log stream ended for pod: {} in deployment: {}", pod_name, deployment_id);
+            // Log stream ended for pod
         }
         Err(e) => {
             error!("Failed to start log stream for pod {}: {}", pod_name, e);

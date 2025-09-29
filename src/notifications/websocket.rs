@@ -9,7 +9,7 @@ use axum::{
 use futures::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
 use serde_json;
-use tracing::{debug, error, info, warn};
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -34,7 +34,7 @@ pub async fn websocket_handler(
     let jwt_manager = JwtManager::new(&state.config.jwt_secret, state.config.jwt_expires_in);
     let user_id = jwt_manager.extract_user_id(&query.token)?;
 
-    info!("User {} connecting via WebSocket", user_id);
+    // User connecting via WebSocket
 
     Ok(ws.on_upgrade(move |socket| {
         handle_socket(socket, user_id, state.notification_manager)
@@ -42,7 +42,7 @@ pub async fn websocket_handler(
 }
 
 async fn handle_socket(socket: WebSocket, user_id: Uuid, notification_manager: NotificationManager) {
-    info!("WebSocket connection established for user {}", user_id);
+    // WebSocket connection established
 
     // Add user to notification manager and get receiver
     let mut receiver = notification_manager.add_connection(user_id).await;
@@ -54,7 +54,7 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, notification_manager: N
     let mut send_task = tokio::spawn(async move {
         // Listen for notifications from the notification manager
         while let Ok(msg) = receiver.recv().await {
-            debug!("Sending notification to user {}: {:?}", user_id, msg);
+            // Sending notification to user
             
             match serde_json::to_string(&msg) {
                 Ok(json_str) => {
@@ -75,32 +75,29 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, notification_manager: N
         while let Some(msg) = socket_receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    debug!("Received text message from user {}: {}", user_id, text);
+                    // Received text message from user
                     // Handle ping/pong or other client messages if needed
                     if text == "ping" {
                         // Client is checking connection
-                        debug!("Ping received from user {}", user_id);
+                        // Ping received from user
                     }
                 }
                 Ok(Message::Binary(_)) => {
-                    debug!("Received binary message from user {}", user_id);
+                    // Received binary message from user
                 }
                 Ok(Message::Close(c)) => {
-                    if let Some(cf) = c {
-                        info!(
-                            "User {} sent close with code {} and reason `{}`",
-                            user_id, cf.code, cf.reason
-                        );
+                    if let Some(_cf) = c {
+                        // User sent close with code and reason
                     } else {
-                        info!("User {} sent close message", user_id);
+                        // User sent close message
                     }
                     break;
                 }
                 Ok(Message::Pong(_)) => {
-                    debug!("Received pong from user {}", user_id);
+                    // Received pong from user
                 }
                 Ok(Message::Ping(_)) => {
-                    debug!("Received ping from user {}", user_id);
+                    // Received ping from user
                 }
                 Err(e) => {
                     error!("WebSocket error for user {}: {}", user_id, e);
@@ -113,18 +110,18 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, notification_manager: N
     // Wait for either task to finish
     tokio::select! {
         _ = (&mut send_task) => {
-            debug!("Send task completed for user {}", user_id);
+            // Send task completed
             recv_task.abort();
         },
         _ = (&mut recv_task) => {
-            debug!("Receive task completed for user {}", user_id);
+            // Receive task completed
             send_task.abort();
         }
     }
 
     // Clean up connection
     notification_manager.remove_connection(&user_id).await;
-    info!("WebSocket connection closed for user {}", user_id);
+    // WebSocket connection closed
 }
 
 // Health check endpoint for WebSocket

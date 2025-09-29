@@ -118,7 +118,7 @@ pub async fn setup_deployment_system(
         worker.start().await;
     });
 
-    tracing::info!("Deployment system initialized successfully");
+    // Deployment system initialized successfully
 
     Ok(deployment_sender)
 }
@@ -129,11 +129,11 @@ async fn open_browser_on_startup(port: u16) {
 
         let url = format!("http://localhost:{}", port);
 
-        tracing::info!("Opening browser at: {}", url);
+        // Opening browser
         println!("\n🚀 Opening browser at: {}\n", url);
 
         match open::that(&url) {
-            Ok(()) => tracing::info!("Browser opened successfully"),
+            Ok(()) => {}, // Browser opened successfully
             Err(e) => {
                 tracing::warn!("Failed to open browser automatically: {}", e);
                 println!(
@@ -146,6 +146,11 @@ async fn open_browser_on_startup(port: u16) {
 }
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Install rustls crypto provider
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+    
     // Load environment variables from .env.local file
     dotenv::from_filename(".env.local").ok();
     
@@ -160,14 +165,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load configuration
     let config = Config::new()?;
-    tracing::info!("Starting Container Engine API server");
+    // Starting Container Engine API server
 
     // Initialize database
     let db = Database::new(&config.database_url).await?;
 
     // Run migrations
     db.migrate().await?;
-    tracing::info!("Database migrations completed");
+    // Database migrations completed
 
     // Initialize Redis
     let redis_client = redis::Client::open(config.redis_url.clone())?;
@@ -177,7 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     redis::cmd("PING")
         .query_async::<_, String>(&mut redis_conn)
         .await?;
-    tracing::info!("Redis connection established");
+    // Redis connection established
     // Setup notification manager
     let notification_manager = NotificationManager::new();
 
@@ -208,7 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|_| "Container Engine".to_string()),
             ) {
                 Ok(service) => {
-                    tracing::info!("Email service initialized successfully with Mailtrap");
+                    // Email service initialized successfully
                     service
                 },
                 Err(e) => {
@@ -255,7 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the server
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
-    tracing::info!("Server listening on {}", addr);
+    // Server listening
     // Automatically open browser in development mode
     let is_dev = std::env::var("ENVIRONMENT").unwrap_or_default() != "production";
     let auto_open =
@@ -283,7 +288,7 @@ fn create_app(state: AppState) -> Router {
         println!("   cd apps/container-engine-frontend");
         println!("   npm install && npm run build\n");
     } else {
-        tracing::info!("Serving frontend from: {}", frontend_path);
+        // Serving frontend
 
         // Check index.html file
         let index_exists = std::path::Path::new(&format!("{}/index.html", frontend_path)).exists();
@@ -311,17 +316,18 @@ fn create_app(state: AppState) -> Router {
         .route("/v1/auth/forgot-password", post(handlers::auth::forgot_password))
         .route("/v1/auth/reset-password", post(handlers::auth::reset_password))
         // API Key management
-        .route("/v1/api-keys", get(handlers::auth::list_api_keys))
-        .route("/v1/api-keys", post(handlers::auth::create_api_key))
+        .route(
+            "/v1/api-keys",
+            get(handlers::auth::list_api_keys).post(handlers::auth::create_api_key),
+        )
         .route(
             "/v1/api-keys/:key_id",
             axum::routing::delete(handlers::auth::revoke_api_key),
         )
         // User profile management
-        .route("/v1/user/profile", get(handlers::user::get_profile))
         .route(
             "/v1/user/profile",
-            axum::routing::put(handlers::user::update_profile),
+            get(handlers::user::get_profile).put(handlers::user::update_profile),
         )
         .route(
             "/v1/user/password",
@@ -330,23 +336,13 @@ fn create_app(state: AppState) -> Router {
         // Deployment management
         .route(
             "/v1/deployments",
-            get(handlers::deployment::list_deployments),
-        )
-        .route(
-            "/v1/deployments",
-            post(handlers::deployment::create_deployment),
+            get(handlers::deployment::list_deployments).post(handlers::deployment::create_deployment),
         )
         .route(
             "/v1/deployments/:deployment_id",
-            get(handlers::deployment::get_deployment),
-        )
-        .route(
-            "/v1/deployments/:deployment_id",
-            axum::routing::put(handlers::deployment::update_deployment),
-        )
-        .route(
-            "/v1/deployments/:deployment_id",
-            axum::routing::delete(handlers::deployment::delete_deployment),
+            get(handlers::deployment::get_deployment)
+                .put(handlers::deployment::update_deployment)
+                .delete(handlers::deployment::delete_deployment),
         )
         .route(
             "/v1/deployments/:deployment_id/scale",
@@ -371,11 +367,7 @@ fn create_app(state: AppState) -> Router {
         // Domain management
         .route(
             "/v1/deployments/:deployment_id/domains",
-            get(handlers::deployment::list_domains),
-        )
-        .route(
-            "/v1/deployments/:deployment_id/domains",
-            post(handlers::deployment::add_domain),
+            get(handlers::deployment::list_domains).post(handlers::deployment::add_domain),
         )
         .route(
             "/v1/deployments/:deployment_id/domains/:domain_id",
@@ -414,19 +406,15 @@ fn create_app(state: AppState) -> Router {
             get(handlers::notifications::get_notification_stats),
         )
         // Webhook management
-        .route("/v1/webhooks", get(handlers::webhooks::list_webhooks))
-        .route("/v1/webhooks", post(handlers::webhooks::create_webhook))
         .route(
-            "/v1/webhooks/:webhook_id",
-            get(handlers::webhooks::get_webhook),
+            "/v1/webhooks",
+            get(handlers::webhooks::list_webhooks).post(handlers::webhooks::create_webhook),
         )
         .route(
             "/v1/webhooks/:webhook_id",
-            axum::routing::put(handlers::webhooks::update_webhook),
-        )
-        .route(
-            "/v1/webhooks/:webhook_id",
-            axum::routing::delete(handlers::webhooks::delete_webhook),
+            get(handlers::webhooks::get_webhook)
+                .put(handlers::webhooks::update_webhook)
+                .delete(handlers::webhooks::delete_webhook),
         )
         .route(
             "/v1/webhooks/:webhook_id/test",

@@ -240,6 +240,7 @@ pub struct DnsRecord {
     pub record_type: String,
     pub name: String,
     pub value: String,
+    pub ttl: u32,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

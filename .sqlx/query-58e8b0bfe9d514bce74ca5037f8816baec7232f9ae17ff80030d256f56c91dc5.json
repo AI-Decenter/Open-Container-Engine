@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, app_name, status, replicas FROM deployments WHERE id = $1 AND user_id = $2",
+  "query": "\n        SELECT id, domain, status, created_at, verified_at\n        FROM domains \n        WHERE deployment_id = $1\n        ORDER BY created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -10,7 +10,7 @@
       },
       {
         "ordinal": 1,
-        "name": "app_name",
+        "name": "domain",
         "type_info": "Varchar"
       },
       {
@@ -20,13 +20,17 @@
       },
       {
         "ordinal": 3,
-        "name": "replicas",
-        "type_info": "Int4"
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "verified_at",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid",
         "Uuid"
       ]
     },
@@ -34,8 +38,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "3b4271cb4ae120eb8ffbdc1146ceb3a5212e7a7893f7394fc24b3b4052d82426"
+  "hash": "58e8b0bfe9d514bce74ca5037f8816baec7232f9ae17ff80030d256f56c91dc5"
 }

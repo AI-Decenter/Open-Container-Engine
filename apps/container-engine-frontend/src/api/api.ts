@@ -37,7 +37,6 @@ api.interceptors.response.use(
     // Handle network errors
     if (!error.response) {
       const errorMessage = 'Network error - please check your connection';
-      alert(errorMessage);
       return Promise.reject(new Error(errorMessage));
     }  
     return Promise.reject(error);
